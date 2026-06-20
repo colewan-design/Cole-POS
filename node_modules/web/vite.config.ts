@@ -1,0 +1,58 @@
+import { defineConfig, type Plugin } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import path from 'node:path'
+
+// Serves app.html and landing.html from cleaner public routes in dev and preview.
+function entryRouteAliases(): Plugin {
+  const rewrite = (req: { url?: string }) => {
+    if (req.url === '/landing' || req.url?.startsWith('/landing?')) {
+      req.url = req.url.replace('/landing', '/landing.html')
+      return
+    }
+
+    if (req.url === '/app' || req.url?.startsWith('/app?')) {
+      req.url = req.url.replace('/app', '/app.html')
+      return
+    }
+
+    if (req.url?.startsWith('/app/')) {
+      req.url = '/app.html'
+    }
+  }
+  return {
+    name: 'entry-route-aliases',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        rewrite(req)
+        next()
+      })
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        rewrite(req)
+        next()
+      })
+    },
+  }
+}
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [vue(), entryRouteAliases()],
+  resolve: {
+    alias: {
+      '@pos/core': path.resolve(__dirname, '../../packages/core/src'),
+      '@pos/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      '@pos/data': path.resolve(__dirname, '../../packages/data/src'),
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        app: path.resolve(__dirname, 'app.html'),
+        landing: path.resolve(__dirname, 'landing.html'),
+      },
+    },
+  },
+})

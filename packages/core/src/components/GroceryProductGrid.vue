@@ -1,0 +1,133 @@
+<script setup lang="ts">
+import { Barcode, Scale, ShoppingBasket } from '@lucide/vue'
+import { computed, reactive } from 'vue'
+import { formatCurrency } from '@pos/shared/index'
+import { usePosStore } from '@pos/core/stores/pos'
+
+const store = usePosStore()
+
+const visibleCategories = computed(() => [
+  { id: 'all', name: 'All' },
+  ...store.categories.filter((category) =>
+    store.products.some(
+      (product) =>
+        product.categoryId === category.id &&
+        product.businessModes.includes(store.settings.businessMode),
+    ),
+  ),
+])
+
+const failedImages = reactive<Record<string, boolean>>({})
+
+function markImageFailed(productId: string) {
+  failedImages[productId] = true
+}
+</script>
+
+<template>
+  <section class="surface-panel">
+    <label class="barcode-field">
+      <Barcode :size="20" />
+      <input
+        :value="store.search"
+        placeholder="Scan or enter barcode"
+        type="search"
+        @input="store.setSearch(($event.target as HTMLInputElement).value)"
+      />
+    </label>
+
+    <div class="category-tabs">
+      <button
+        v-for="category in visibleCategories"
+        :key="category.id"
+        class="category-tab"
+        :class="{ active: store.selectedCategoryId === category.id }"
+        type="button"
+        @click="store.setCategory(category.id)"
+      >
+        {{ category.name }}
+      </button>
+    </div>
+
+    <div class="product-grid">
+      <button
+        v-for="product in store.filteredProducts"
+        :key="product.id"
+        class="product-card"
+        :disabled="product.outOfStock"
+        type="button"
+        @click="store.addProduct(product.id)"
+      >
+        <div class="product-card__art grocery-art">
+          <img
+            v-if="product.imageUrl && !failedImages[product.id]"
+            :src="product.imageUrl"
+            :alt="product.name"
+            loading="lazy"
+            @error="markImageFailed(product.id)"
+          />
+          <ShoppingBasket v-else :size="32" />
+          <span v-if="product.kind === 'weighted'" class="product-card__badge">
+            <Scale :size="14" />
+          </span>
+        </div>
+        <div class="product-card__meta grocery-meta">
+          <p class="product-card__name">{{ product.name }}</p>
+          <p class="product-card__price">
+            {{ formatCurrency(product.priceCents) }}
+            <span v-if="product.unitLabel">{{ product.unitLabel }}</span>
+          </p>
+        </div>
+      </button>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.barcode-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0 var(--space-4);
+  min-height: 52px;
+  margin-bottom: var(--space-4);
+  border: 1.5px solid var(--separator);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+  cursor: text;
+}
+
+.barcode-field input {
+  flex: 1;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  background: transparent;
+  font: var(--type-body);
+}
+
+.grocery-art {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.product-card__badge {
+  position: absolute;
+  bottom: var(--space-2);
+  right: var(--space-2);
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.grocery-meta {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+</style>
