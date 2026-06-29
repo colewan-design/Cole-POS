@@ -1,4 +1,16 @@
 {
+  "experimentalServices": {
+    "web": {
+      "root": "apps/web",
+      "routePrefix": "/",
+      "framework": "vite"
+    },
+    "backend": {
+      "root": "backend",
+      "routePrefix": "/_/backend",
+      "framework": "vite"
+    }
+  },
   "rewrites": [
     { "source": "/landing", "destination": "/landing.html" },
     { "source": "/app",     "destination": "/app.html"     },
