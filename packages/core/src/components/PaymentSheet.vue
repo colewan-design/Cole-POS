@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { formatCurrency } from '@pos/shared/index'
 import NumericKeypad from '@pos/core/components/NumericKeypad.vue'
 import { usePosStore } from '@pos/core/stores/pos'
@@ -9,6 +9,7 @@ const store = usePosStore()
 
 // Prevents a double-tap from firing two orders. Reset on unmount (dialog close).
 const confirming = ref(false)
+const panelRef = ref<HTMLElement | null>(null)
 
 const paymentMethods = [
   { id: 'cash',    label: 'Cash' },
@@ -60,6 +61,11 @@ function handleConfirm() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  const target = event.target
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    return
+  }
+
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('close')
@@ -74,20 +80,31 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (store.paymentMethod !== 'cash') return
 
-  if (event.key >= '0' && event.key <= '9') {
+  if (
+    (event.key >= '0' && event.key <= '9')
+    || (event.code.startsWith('Numpad') && /\d$/.test(event.code))
+  ) {
     event.preventDefault()
-    store.appendTenderDigit(Number(event.key))
+    const rawDigit = event.key >= '0' && event.key <= '9'
+      ? event.key
+      : event.code.slice('Numpad'.length)
+    store.appendTenderDigit(Number(rawDigit))
     return
   }
 
-  if (event.key === '.' || event.key === ',') {
+  if (event.key === '.' || event.key === ',' || event.code === 'NumpadDecimal') {
     event.preventDefault()
     store.appendTenderDecimal()
     return
   }
 
-  if (event.key === 'Backspace') {
+  if (event.key === 'Backspace' || event.key === 'Delete') {
     event.preventDefault()
+    if (event.key === 'Delete') {
+      store.clearTendered()
+      return
+    }
+
     store.backspaceTendered()
     return
   }
@@ -98,14 +115,25 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
+onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
+  await nextTick()
+  panelRef.value?.focus()
+})
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
   <Teleport to="body">
     <div class="sheet-overlay" @click.self="emit('close')">
-      <div class="sheet-panel">
+      <div
+        ref="panelRef"
+        class="sheet-panel"
+        aria-label="Payment dialog"
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+      >
         <div class="sheet-grabber" />
 
         <div class="sheet-scroll">

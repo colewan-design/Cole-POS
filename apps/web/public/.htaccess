@@ -1,0 +1,15 @@
+<IfModule mod_rewrite.c>
+  DirectoryIndex index.html landing.html app.html
+  RewriteEngine On
+  RewriteBase /
+
+  RewriteRule ^$ index.html [L]
+
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  RewriteRule ^app/?$ app.html [L]
+  RewriteRule ^app/.*$ app.html [L]
+  RewriteRule ^landing/?$ landing.html [L]
+</IfModule>

@@ -3,6 +3,7 @@
         Options -MultiViews -Indexes
     </IfModule>
 
+    DirectoryIndex index.html index.php
     RewriteEngine On
 
     # Handle Authorization Header
@@ -17,6 +18,20 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
+
+    # Prefer the built marketing/app entrypoints when the frontend bundle is
+    # deployed into this public directory alongside Laravel.
+    RewriteCond %{DOCUMENT_ROOT}/index.html -f
+    RewriteRule ^$ index.html [L]
+
+    RewriteCond %{DOCUMENT_ROOT}/landing.html -f
+    RewriteRule ^landing/?$ landing.html [L]
+
+    RewriteCond %{DOCUMENT_ROOT}/app.html -f
+    RewriteRule ^app/?$ app.html [L]
+
+    RewriteCond %{DOCUMENT_ROOT}/app.html -f
+    RewriteRule ^app/.*$ app.html [L]
 
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d

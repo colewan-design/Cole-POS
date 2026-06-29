@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Minus, Plus, Trash2 } from '@lucide/vue'
+import { Minus, Plus, Trash2, X } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { formatCurrency } from '@pos/shared/index'
 import PaymentSheet from '@pos/core/components/PaymentSheet.vue'
@@ -65,6 +65,15 @@ async function openPayment() {
         </div>
 
         <div class="order-line__total">{{ formatCurrency(line.subtotalCents) }}</div>
+
+        <button
+          class="icon-button icon-button--sm"
+          type="button"
+          :aria-label="`Remove ${line.product.name}`"
+          @click="store.removeLine(line.product.id)"
+        >
+          <X :size="14" />
+        </button>
       </article>
     </div>
 

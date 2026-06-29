@@ -11,12 +11,13 @@ const VERTEX_SRC = `
   attribute vec2 aUV;
   uniform mat4 uMVP;
   uniform vec2 uUVScale;
+  uniform float uAspect;
   varying vec2 vUV;
   varying vec2 vPos;
   void main() {
     vUV = 0.5 + (aUV - 0.5) * uUVScale;
     vPos = aPos;
-    gl_Position = uMVP * vec4(aPos, 0.0, 1.0);
+    gl_Position = uMVP * vec4(aPos.x * uAspect, aPos.y, 0.0, 1.0);
   }
 `
 
@@ -211,6 +212,7 @@ function render() {
   glc.useProgram(prog)
   glc.uniformMatrix4fv(glc.getUniformLocation(prog, 'uMVP'), false, mvp)
   glc.uniform2fv(glc.getUniformLocation(prog, 'uUVScale'), uvScale)
+  glc.uniform1f(glc.getUniformLocation(prog, 'uAspect'), aspect)
   glc.uniform2f(glc.getUniformLocation(prog, 'uLight'), light.x * halfW, -light.y * halfH)
   glc.uniform1f(glc.getUniformLocation(prog, 'uGlareStrength'), light.strength)
 

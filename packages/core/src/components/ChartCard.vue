@@ -37,4 +37,8 @@ defineProps<{
   flex-direction: column;
   justify-content: center;
 }
+
+.chart-card--wide {
+  grid-column: 1 / -1;
+}
 </style>

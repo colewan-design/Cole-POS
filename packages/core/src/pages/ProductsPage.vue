@@ -2,6 +2,7 @@
 import { Check, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ProductSheet from '@pos/core/components/ProductSheet.vue'
+import SelectMenu from '@pos/core/components/SelectMenu.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { formatCurrency, type BusinessMode, type Category, type Product } from '@pos/shared/index'
@@ -338,12 +339,16 @@ async function confirmDeleteCategory(id: string) {
         </label>
 
         <div class="ptoolbar__controls">
-          <select v-model="sortBy" class="psort" aria-label="Sort products by">
-            <option value="name">Name</option>
-            <option value="price">Price</option>
-            <option value="low-stock">Low stock</option>
-            <option value="recently-added">Recently added</option>
-          </select>
+          <SelectMenu
+            v-model="sortBy"
+            label="Sort products by"
+            :options="[
+              { value: 'name',           label: 'Name' },
+              { value: 'price',          label: 'Price' },
+              { value: 'low-stock',      label: 'Low stock' },
+              { value: 'recently-added', label: 'Recently added' },
+            ]"
+          />
 
           <div class="segmented-control" role="group" aria-label="Filter by availability">
             <button

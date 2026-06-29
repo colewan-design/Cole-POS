@@ -398,7 +398,7 @@ const hourlySummary = computed(() => {
       </ChartCard>
 
       <!-- Chart 4: Hourly sales -->
-      <ChartCard title="Hourly sales" :summary="hourlySummary">
+      <ChartCard title="Hourly sales" :summary="hourlySummary" class="chart-card--wide">
         <div v-if="!hasHourlyData" class="empty-state">
           Hourly data appears once orders are recorded.
         </div>

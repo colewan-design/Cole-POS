@@ -1,10 +1,26 @@
 <script setup lang="ts">
-import { ChefHat, GlassWater, IceCreamCone, PackageSearch, Soup } from '@lucide/vue'
+import { ChefHat, GlassWater, IceCreamCone, PackageSearch, Plus, Soup } from '@lucide/vue'
 import { computed, reactive } from 'vue'
 import { formatCurrency } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 
 const store = usePosStore()
+
+const modeProducts = computed(() =>
+  store.products.filter((product) => product.businessModes.includes(store.settings.businessMode)),
+)
+
+const categoryCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const product of modeProducts.value) {
+    counts.set(product.categoryId, (counts.get(product.categoryId) ?? 0) + 1)
+  }
+  return counts
+})
+
+function countFor(categoryId: string) {
+  return categoryId === 'all' ? modeProducts.value.length : categoryCounts.value.get(categoryId) ?? 0
+}
 
 const visibleCategories = computed(() => [
   { id: 'all', name: 'All' },
@@ -16,6 +32,18 @@ const visibleCategories = computed(() => [
     ),
   ),
 ])
+
+const cartQuantities = computed(() => {
+  const map = new Map<string, number>()
+  for (const line of store.cartLines) {
+    map.set(line.product.id, line.quantity)
+  }
+  return map
+})
+
+function quantityFor(productId: string) {
+  return cartQuantities.value.get(productId) ?? 0
+}
 
 const categoryIcons: Record<string, typeof Soup> = {
   starters: Soup,
@@ -66,6 +94,7 @@ function markImageFailed(productId: string) {
         @click="store.setCategory(category.id)"
       >
         {{ category.name }}
+        <span class="category-tab__count">{{ countFor(category.id) }}</span>
       </button>
     </div>
 
@@ -79,6 +108,8 @@ function markImageFailed(productId: string) {
         @click="store.addProduct(product.id)"
       >
         <div class="product-card__art">
+          <span v-if="quantityFor(product.id) > 0" class="product-card__qty">{{ quantityFor(product.id) }}</span>
+          <span class="product-card__add" aria-hidden="true"><Plus :size="16" /></span>
           <img
             v-if="product.imageUrl && !failedImages[product.id]"
             :src="product.imageUrl"

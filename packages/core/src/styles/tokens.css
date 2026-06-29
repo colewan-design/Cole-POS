@@ -2,6 +2,8 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --font-brand: var(--font-sans);
 
   --type-display: 700 3rem/3.25rem var(--font-sans);
   --type-title1: 700 1.75rem/2.125rem var(--font-sans);
@@ -14,6 +16,7 @@
 
   --accent: #007aff;
   --accent-pressed: #0062cc;
+  --accent-text-on: #ffffff;
   --success: #34c759;
   --warning: #ff9500;
   --danger: #ff3b30;
@@ -63,6 +66,7 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --accent: #0a84ff;
     --success: #30d158;
     --warning: #ff9f0a;
@@ -80,6 +84,7 @@
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --accent: #0a84ff;
   --success: #30d158;
   --warning: #ff9f0a;
@@ -93,4 +98,405 @@
   --text-tertiary: #8e8e93;
   --separator: rgba(84, 84, 88, 0.55);
   --material-bar-bg: rgba(30, 30, 30, 0.72);
+}
+
+/*
+ * Ember — warm coffee-shop theme (amber accent, grayscale everywhere else).
+ * Unlike the base theme, Ember still respects the Appearance setting: it has
+ * its own light (cream/espresso) and dark (charcoal/amber) palettes, picked
+ * the same way the base theme picks light/dark — system preference, or the
+ * explicit [data-theme] override.
+ */
+:root[data-color-theme='ember'] {
+  --font-brand: var(--font-serif);
+
+  /* Light (default): warm cream surfaces, deep amber-brown accent. */
+  --accent: #c97a2b;
+  --accent-pressed: #a8631f;
+  --accent-text-on: #ffffff;
+  --success: #4f9d56;
+  --warning: #b5651d;
+  --danger: #b9483c;
+  --bg-base: #f7f1e8;
+  --bg-surface: rgba(255, 250, 244, 0.9);
+  --bg-elevated: #fffaf4;
+  --fill: rgba(40, 30, 20, 0.06);
+  --text-primary: #2a2118;
+  --text-secondary: #6b5d4f;
+  --text-tertiary: #9a8b7a;
+  --separator: rgba(40, 30, 20, 0.12);
+  --material-bar-bg: rgba(247, 241, 232, 0.78);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-theme='ember']:not([data-theme='light']) {
+    --accent: #e8a33d;
+    --accent-pressed: #c9872b;
+    --accent-text-on: #1a1a1a;
+    --success: #6fae72;
+    --warning: #c97b3d;
+    --danger: #d96b5d;
+    --bg-base: #161616;
+    --bg-surface: rgba(38, 38, 38, 0.92);
+    --bg-elevated: #262626;
+    --fill: rgba(255, 255, 255, 0.06);
+    --text-primary: #f5f5f5;
+    --text-secondary: #9a9a9a;
+    --text-tertiary: #777777;
+    --separator: rgba(255, 255, 255, 0.08);
+    --material-bar-bg: rgba(22, 22, 22, 0.78);
+  }
+}
+
+:root[data-color-theme='ember'][data-theme='dark'] {
+  --accent: #e8a33d;
+  --accent-pressed: #c9872b;
+  --accent-text-on: #1a1a1a;
+  --success: #6fae72;
+  --warning: #c97b3d;
+  --danger: #d96b5d;
+  --bg-base: #161616;
+  --bg-surface: rgba(38, 38, 38, 0.92);
+  --bg-elevated: #262626;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #f5f5f5;
+  --text-secondary: #9a9a9a;
+  --text-tertiary: #777777;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(22, 22, 22, 0.78);
+}
+
+/*
+ * Matcha — earthy tea-house theme (sage-green accent, grayscale-green
+ * everywhere else). Same bones as Ember, same Appearance-following
+ * light/dark split: a cream-sage light palette and a deep matcha-green
+ * dark palette.
+ */
+:root[data-color-theme='matcha'] {
+  --font-brand: var(--font-serif);
+
+  /* Light (default): soft cream-sage surfaces, deep matcha accent. */
+  --accent: #5f7d3d;
+  --accent-pressed: #4c6730;
+  --accent-text-on: #ffffff;
+  --success: #4f9d6e;
+  --warning: #b5821d;
+  --danger: #b9483c;
+  --bg-base: #f4f3ea;
+  --bg-surface: rgba(251, 251, 243, 0.9);
+  --bg-elevated: #fbfbf2;
+  --fill: rgba(31, 42, 27, 0.06);
+  --text-primary: #1f2a1b;
+  --text-secondary: #5e6b54;
+  --text-tertiary: #8a9485;
+  --separator: rgba(31, 42, 27, 0.12);
+  --material-bar-bg: rgba(244, 243, 234, 0.78);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-theme='matcha']:not([data-theme='light']) {
+    --accent: #93b768;
+    --accent-pressed: #7a9a55;
+    --accent-text-on: #142016;
+    --success: #5da88b;
+    --warning: #c2a468;
+    --danger: #c1614f;
+    --bg-base: #131d16;
+    --bg-surface: rgba(31, 42, 33, 0.92);
+    --bg-elevated: #1f2a21;
+    --fill: rgba(255, 255, 255, 0.06);
+    --text-primary: #f2f0e6;
+    --text-secondary: #8a9485;
+    --text-tertiary: #6b756a;
+    --separator: rgba(255, 255, 255, 0.08);
+    --material-bar-bg: rgba(19, 29, 22, 0.78);
+  }
+}
+
+:root[data-color-theme='matcha'][data-theme='dark'] {
+  --accent: #93b768;
+  --accent-pressed: #7a9a55;
+  --accent-text-on: #142016;
+  --success: #5da88b;
+  --warning: #c2a468;
+  --danger: #c1614f;
+  --bg-base: #131d16;
+  --bg-surface: rgba(31, 42, 33, 0.92);
+  --bg-elevated: #1f2a21;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #f2f0e6;
+  --text-secondary: #8a9485;
+  --text-tertiary: #6b756a;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(19, 29, 22, 0.78);
+}
+
+/* Casa — terracotta Mediterranean kitchen. Light: warm cream, daytime-friendly. */
+:root[data-color-theme='casa'] {
+  --font-brand: var(--font-serif);
+  --accent: #c97a3f;
+  --accent-pressed: #a8632f;
+  --accent-text-on: #fbf6ee;
+  --success: #5b8a4f;
+  --warning: #6b7b3d;
+  --danger: #a8483c;
+  --bg-base: #f5efe6;
+  --bg-surface: rgba(235, 224, 207, 0.9);
+  --bg-elevated: #ebe0cf;
+  --fill: rgba(58, 43, 31, 0.06);
+  --text-primary: #3a2b1f;
+  --text-secondary: #8c7b68;
+  --text-tertiary: #ab9c89;
+  --separator: rgba(58, 43, 31, 0.12);
+  --material-bar-bg: rgba(245, 239, 230, 0.78);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-theme='casa']:not([data-theme='light']) {
+    --accent: #e08a4f;
+    --accent-pressed: #c2723d;
+    --accent-text-on: #1a120a;
+    --success: #6fae72;
+    --warning: #c2a468;
+    --danger: #d9776a;
+    --bg-base: #1c140d;
+    --bg-surface: rgba(40, 30, 22, 0.92);
+    --bg-elevated: #281e16;
+    --fill: rgba(255, 255, 255, 0.06);
+    --text-primary: #f3ece2;
+    --text-secondary: #b0a08c;
+    --text-tertiary: #806f5c;
+    --separator: rgba(255, 255, 255, 0.08);
+    --material-bar-bg: rgba(20, 14, 9, 0.78);
+  }
+}
+
+:root[data-color-theme='casa'][data-theme='dark'] {
+  --accent: #e08a4f;
+  --accent-pressed: #c2723d;
+  --accent-text-on: #1a120a;
+  --success: #6fae72;
+  --warning: #c2a468;
+  --danger: #d9776a;
+  --bg-base: #1c140d;
+  --bg-surface: rgba(40, 30, 22, 0.92);
+  --bg-elevated: #281e16;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #f3ece2;
+  --text-secondary: #b0a08c;
+  --text-tertiary: #806f5c;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(20, 14, 9, 0.78);
+}
+
+/* Bloom — berry patisserie & flowers. Light: blush cream, deep magenta-pink accent. */
+:root[data-color-theme='bloom'] {
+  --font-brand: var(--font-serif);
+  --accent: #c2185b;
+  --accent-pressed: #9e1249;
+  --accent-text-on: #fdf6f7;
+  --success: #5fa873;
+  --warning: #c9a24b;
+  --danger: #9e2b3e;
+  --bg-base: #fbf1f1;
+  --bg-surface: rgba(240, 221, 225, 0.9);
+  --bg-elevated: #f0dde1;
+  --fill: rgba(59, 26, 38, 0.06);
+  --text-primary: #3b1a26;
+  --text-secondary: #9a7a82;
+  --text-tertiary: #b89aa0;
+  --separator: rgba(59, 26, 38, 0.12);
+  --material-bar-bg: rgba(251, 241, 241, 0.78);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-theme='bloom']:not([data-theme='light']) {
+    --accent: #e0568f;
+    --accent-pressed: #c23d73;
+    --accent-text-on: #2a0f1a;
+    --success: #6fc28a;
+    --warning: #d9b15c;
+    --danger: #d9576a;
+    --bg-base: #1d1117;
+    --bg-surface: rgba(43, 28, 38, 0.92);
+    --bg-elevated: #2b1c26;
+    --fill: rgba(255, 255, 255, 0.06);
+    --text-primary: #f6ecf0;
+    --text-secondary: #b08e98;
+    --text-tertiary: #7d6470;
+    --separator: rgba(255, 255, 255, 0.08);
+    --material-bar-bg: rgba(22, 13, 18, 0.78);
+  }
+}
+
+:root[data-color-theme='bloom'][data-theme='dark'] {
+  --accent: #e0568f;
+  --accent-pressed: #c23d73;
+  --accent-text-on: #2a0f1a;
+  --success: #6fc28a;
+  --warning: #d9b15c;
+  --danger: #d9576a;
+  --bg-base: #1d1117;
+  --bg-surface: rgba(43, 28, 38, 0.92);
+  --bg-elevated: #2b1c26;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #f6ecf0;
+  --text-secondary: #b08e98;
+  --text-tertiary: #7d6470;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(22, 13, 18, 0.78);
+}
+
+/* Grove — citrus juice & smoothie bar. Light: off-white, bright lime-green. */
+:root[data-color-theme='grove'] {
+  --font-brand: var(--font-serif);
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --accent: #a8c545;
+  --accent-pressed: #8faa34;
+  --accent-text-on: #1f2e13;
+  --success: #4f8b3d;
+  --warning: #e0b23d;
+  --danger: #c1503f;
+  --bg-base: #fafaf2;
+  --bg-surface: rgba(239, 239, 221, 0.9);
+  --bg-elevated: #efefdd;
+  --fill: rgba(31, 46, 19, 0.06);
+  --text-primary: #1f2e13;
+  --text-secondary: #7c8568;
+  --text-tertiary: #9ca488;
+  --separator: rgba(31, 46, 19, 0.12);
+  --material-bar-bg: rgba(250, 250, 242, 0.78);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-theme='grove']:not([data-theme='light']) {
+    --accent: #c0d65e;
+    --accent-pressed: #a3b948;
+    --accent-text-on: #14200a;
+    --success: #6fae5c;
+    --warning: #e0c25c;
+    --danger: #d9705c;
+    --bg-base: #141c10;
+    --bg-surface: rgba(30, 40, 22, 0.92);
+    --bg-elevated: #1f2917;
+    --fill: rgba(255, 255, 255, 0.06);
+    --text-primary: #f1f3e4;
+    --text-secondary: #a3ad8e;
+    --text-tertiary: #717a60;
+    --separator: rgba(255, 255, 255, 0.08);
+    --material-bar-bg: rgba(16, 22, 11, 0.78);
+  }
+}
+
+:root[data-color-theme='grove'][data-theme='dark'] {
+  --accent: #c0d65e;
+  --accent-pressed: #a3b948;
+  --accent-text-on: #14200a;
+  --success: #6fae5c;
+  --warning: #e0c25c;
+  --danger: #d9705c;
+  --bg-base: #141c10;
+  --bg-surface: rgba(30, 40, 22, 0.92);
+  --bg-elevated: #1f2917;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #f1f3e4;
+  --text-secondary: #a3ad8e;
+  --text-tertiary: #717a60;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(16, 22, 11, 0.78);
+}
+
+/*
+ * The themes below are each a single fixed mood (not Light/Dark pairs) — the
+ * brief presents each as one deliberate palette, e.g. Nocturne is always
+ * "late-night bar", Reserve is always "after-dark steakhouse". They apply
+ * unconditionally whenever selected, regardless of Appearance.
+ */
+
+/* Nocturne — midnight blue late-night bar. Electric blue on near-black navy. */
+:root[data-color-theme='nocturne'] {
+  color-scheme: dark;
+  --font-brand: var(--font-serif);
+  --accent: #4a9eff;
+  --accent-pressed: #2f82d6;
+  --accent-text-on: #0a0f18;
+  --success: #4fd1b0;
+  --warning: #d9a458;
+  --danger: #e0584f;
+  --bg-base: #0d1521;
+  --bg-surface: rgba(24, 34, 47, 0.92);
+  --bg-elevated: #18222f;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #edf1f7;
+  --text-secondary: #7e8c9e;
+  --text-tertiary: #5c6b7d;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(10, 15, 24, 0.78);
+}
+
+/* Reserve — charcoal & gold steakhouse. Near-black, metallic gold, restrained. */
+:root[data-color-theme='reserve'] {
+  color-scheme: dark;
+  --font-brand: var(--font-serif);
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --accent: #c9a24b;
+  --accent-pressed: #ad8736;
+  --accent-text-on: #0e0e0e;
+  --success: #5fa66b;
+  --warning: #a8823d;
+  --danger: #7a2433;
+  --bg-base: #0e0e0e;
+  --bg-surface: rgba(28, 28, 28, 0.92);
+  --bg-elevated: #1c1c1c;
+  --fill: rgba(255, 255, 255, 0.05);
+  --text-primary: #f7f7f5;
+  --text-secondary: #8c8a85;
+  --text-tertiary: #69675f;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(14, 14, 14, 0.78);
+}
+
+/* Harbor — slate & teal seafood market. Cool gray-blue, clean and calm. */
+:root[data-color-theme='harbor'] {
+  color-scheme: dark;
+  --font-brand: var(--font-serif);
+  --accent: #2ec4b6;
+  --accent-pressed: #24a597;
+  --accent-text-on: #0f1517;
+  --success: #4fae6e;
+  --warning: #d9a441;
+  --danger: #e07a5f;
+  --bg-base: #1a2228;
+  --bg-surface: rgba(34, 44, 50, 0.92);
+  --bg-elevated: #222c32;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #edf2f1;
+  --text-secondary: #849198;
+  --text-tertiary: #5f6b70;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(26, 34, 40, 0.78);
+}
+
+/* Mono — monochrome studio store. No hue at all; white does the accent's job. */
+:root[data-color-theme='mono'] {
+  color-scheme: dark;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --accent: #ffffff;
+  --accent-pressed: #d8d8d8;
+  --accent-text-on: #0a0a0a;
+  --success: #6fbe86;
+  --warning: #b8a06a;
+  --danger: #c75c52;
+  --bg-base: #0a0a0a;
+  --bg-surface: rgba(30, 30, 30, 0.92);
+  --bg-elevated: #1e1e1e;
+  --fill: rgba(255, 255, 255, 0.06);
+  --text-primary: #ffffff;
+  --text-secondary: #8a8a8a;
+  --text-tertiary: #5c5c5c;
+  --separator: rgba(255, 255, 255, 0.08);
+  --material-bar-bg: rgba(10, 10, 10, 0.78);
 }

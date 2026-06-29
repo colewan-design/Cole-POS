@@ -21,6 +21,14 @@ import {
   type ShiftSummary,
   type UserAccount,
 } from '@pos/shared/index'
+import {
+  createSupabaseSync,
+  type SupabaseSyncConfig,
+  type SupabaseSyncSession,
+  type SupabaseSync,
+} from './supabase-sync'
+
+export type { SupabaseSyncConfig }
 
 export interface DataStore {
   read<T>(key: string, fallback: T): Promise<T>
@@ -83,7 +91,7 @@ export interface PosRepository {
 
 export interface BrowserPosRepositoryOptions {
   store?: DataStore
-  sync?: Partial<SyncConfig>
+  sync?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>
 }
 
 interface SyncConfig {
@@ -332,19 +340,39 @@ class BrowserIndexedDbStore implements DataStore {
   }
 }
 
-function normalizeSyncConfig(input?: Partial<SyncConfig>): SyncConfig | null {
-  if (!input?.apiBaseUrl || !input.organizationSlug || !input.storeCode || !input.pairingCode) {
+function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>): SyncConfig | null {
+  const cfg = input as Partial<SyncConfig>
+  if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode || !cfg.pairingCode) {
     return null
   }
 
   return {
-    apiBaseUrl: input.apiBaseUrl.replace(/\/+$/, ''),
-    organizationSlug: input.organizationSlug,
-    storeCode: input.storeCode,
-    pairingCode: input.pairingCode,
-    deviceName: input.deviceName?.trim() || defaultDeviceName(),
-    platform: input.platform?.trim() || 'web',
-    appVersion: input.appVersion?.trim() || '0.1.0',
+    apiBaseUrl: cfg.apiBaseUrl.replace(/\/+$/, ''),
+    organizationSlug: cfg.organizationSlug,
+    storeCode: cfg.storeCode,
+    pairingCode: cfg.pairingCode,
+    deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
+    platform: cfg.platform?.trim() || 'web',
+    appVersion: cfg.appVersion?.trim() || '0.1.0',
+  }
+}
+
+function normalizeSupabaseSyncConfig(
+  input?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>,
+): SupabaseSyncConfig | null {
+  const cfg = input as Partial<SupabaseSyncConfig>
+  if (!cfg?.supabaseUrl || !cfg.supabaseAnonKey || !cfg.organizationSlug || !cfg.storeCode) {
+    return null
+  }
+
+  return {
+    supabaseUrl: cfg.supabaseUrl,
+    supabaseAnonKey: cfg.supabaseAnonKey,
+    organizationSlug: cfg.organizationSlug,
+    storeCode: cfg.storeCode,
+    deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
+    platform: cfg.platform?.trim() || 'web',
+    appVersion: cfg.appVersion?.trim() || '0.1.0',
   }
 }
 
@@ -446,10 +474,23 @@ function mapBackendShift(shift: BackendShiftSummary): ShiftSummary {
 }
 
 function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[]) {
+  const demoProductMap = new Map(demoProducts.map((p) => [p.id, p]))
+
+  let stockPatched = false
+  const patchedProducts = storedProducts.map((p) => {
+    const demo = demoProductMap.get(p.id)
+    if (demo && p.stockQty === undefined && demo.stockQty !== undefined) {
+      stockPatched = true
+      return { ...p, stockQty: demo.stockQty, lowStockThreshold: demo.lowStockThreshold }
+    }
+    return p
+  })
+
   const storedProductIds = new Set(storedProducts.map((product) => product.id))
   const newDemoProducts = demoProducts.filter((product) => !storedProductIds.has(product.id))
-  const mergedProducts = newDemoProducts.length > 0
-    ? [...storedProducts, ...newDemoProducts]
+  const productsChanged = newDemoProducts.length > 0 || stockPatched
+  const mergedProducts = productsChanged
+    ? [...patchedProducts, ...newDemoProducts]
     : storedProducts
 
   const storedCategoryIds = new Set(storedCategories.map((category) => category.id))
@@ -461,23 +502,43 @@ function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[
   return {
     products: mergedProducts,
     categories: mergedCategories,
-    addedDemoProducts: newDemoProducts.length > 0,
+    addedDemoProducts: productsChanged,
     addedDemoCategories: newDemoCategories.length > 0,
   }
 }
 
 export function createBrowserPosRepository(options: BrowserPosRepositoryOptions = {}): PosRepository {
   const store = options.store ?? new BrowserIndexedDbStore()
-  const syncConfig = normalizeSyncConfig(options.sync)
-  const appVersion = syncConfig?.appVersion ?? '0.1.0'
+  const supabaseConfig = normalizeSupabaseSyncConfig(options.sync)
+  const syncConfig = supabaseConfig ? null : normalizeSyncConfig(options.sync)
+  const supabaseSync: SupabaseSync | null = supabaseConfig ? createSupabaseSync(supabaseConfig) : null
+  const appVersion = supabaseConfig?.appVersion ?? syncConfig?.appVersion ?? '0.1.0'
 
   async function isOnlineSyncEnabled() {
-    if (!syncConfig) {
+    if (!syncConfig && !supabaseSync) {
       return false
     }
 
     const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
     return settings.syncMode === 'online-sync'
+  }
+
+  async function readSupabaseSession(): Promise<SupabaseSyncSession | null> {
+    return store.read<SupabaseSyncSession | null>(storageKeys.syncSession, null)
+  }
+
+  async function writeSupabaseSession(session: SupabaseSyncSession | null): Promise<void> {
+    await store.write(storageKeys.syncSession, session)
+  }
+
+  async function getSupabaseSession(): Promise<SupabaseSyncSession | null> {
+    if (!supabaseSync) return null
+    const cached = await readSupabaseSession()
+    const live = await supabaseSync.getCurrentSession(cached)
+    if (live && (!cached || live.organizationId !== cached.organizationId)) {
+      await writeSupabaseSession(live)
+    }
+    return live
   }
 
   async function getDeviceId() {
@@ -529,6 +590,13 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function refreshRemoteShift() {
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) return null
+      const shift = await supabaseSync.getCurrentShift(session.storeId)
+      await writeActiveShift(shift)
+      return shift
+    }
     const response = await backendFetch<{ shift: BackendShiftSummary | null }>('/api/shifts/current')
     const shift = response.shift ? mapBackendShift(response.shift) : null
     await writeActiveShift(shift)
@@ -633,6 +701,16 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function syncCatalogFromBootstrap() {
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) throw new Error('No Supabase session for bootstrap.')
+      const result = await supabaseSync.bootstrapCatalog(session.organizationId)
+      await store.write(storageKeys.categories, result.categories)
+      await store.write(storageKeys.products, result.products)
+      await writeSyncCursor(result.cursor)
+      return result
+    }
+
     const response = await backendFetch<{
       catalog: {
         categories: BackendCategory[]
@@ -656,6 +734,27 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function pullCatalogChanges() {
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) return
+      const cursor = await readSyncCursor()
+      if (!cursor) return
+      const result = await supabaseSync.pullChanges(session.organizationId, cursor)
+
+      const currentCategories = await store.read<Category[]>(storageKeys.categories, [])
+      const currentProducts = await store.read<Product[]>(storageKeys.products, [])
+      const nextCategories = new Map(currentCategories.map((entry) => [entry.id, entry]))
+      const nextProducts = new Map(currentProducts.map((entry) => [entry.id, entry]))
+
+      for (const cat of result.categories) nextCategories.set(cat.id, cat)
+      for (const prod of result.products) nextProducts.set(prod.id, prod)
+
+      await store.write(storageKeys.categories, Array.from(nextCategories.values()))
+      await store.write(storageKeys.products, Array.from(nextProducts.values()))
+      await writeSyncCursor(result.cursor)
+      return
+    }
+
     const cursor = await readSyncCursor()
     const response = await backendFetch<{
       cursor: string
@@ -710,13 +809,24 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return
     }
 
-    const session = await ensureRemoteSession()
-    if (!session) {
+    const events = await readOutbox()
+    if (events.length === 0) {
       return
     }
 
-    const events = await readOutbox()
-    if (events.length === 0) {
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) return
+      const appliedIds = await supabaseSync.pushEvents(events, session)
+      if (appliedIds.size > 0) {
+        await writeOutbox(events.filter((event) => !appliedIds.has(event.id)))
+      }
+      await pullCatalogChanges()
+      return
+    }
+
+    const session = await ensureRemoteSession()
+    if (!session) {
       return
     }
 
@@ -856,6 +966,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) return null
+      const users = await supabaseSync.loadUsers(session.organizationId)
+      await store.write(storageKeys.users, users)
+      return users
+    }
+
     const response = await backendFetch<{ users: UserAccount[] }>('/api/staff-users')
     await store.write(storageKeys.users, response.users)
     return response.users
@@ -864,6 +982,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   async function tryLoadRemoteRoles() {
     if (!await isOnlineSyncEnabled()) {
       return null
+    }
+
+    if (supabaseSync) {
+      const session = await getSupabaseSession()
+      if (!session) return null
+      const roles = await supabaseSync.loadRoles(session.organizationId)
+      await store.write(storageKeys.roles, roles)
+      return roles
     }
 
     const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles')
@@ -1004,16 +1130,30 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async openShift(input) {
       if (await isOnlineSyncEnabled()) {
-        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/open', {
-          method: 'POST',
-          body: JSON.stringify({
-            openingCashCents: input.openingCashCents,
-            userId: input.userId ?? null,
-          }),
-        })
-        const shift = mapBackendShift(response.shift)
-        await writeActiveShift(shift)
-        return shift
+        if (supabaseSync) {
+          const session = await getSupabaseSession()
+          if (session) {
+            const shift = await supabaseSync.openShift({
+              openingCashCents: input.openingCashCents,
+              userId: input.userId ?? null,
+              storeId: session.storeId,
+              organizationId: session.organizationId,
+            })
+            await writeActiveShift(shift)
+            return shift
+          }
+        } else {
+          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/open', {
+            method: 'POST',
+            body: JSON.stringify({
+              openingCashCents: input.openingCashCents,
+              userId: input.userId ?? null,
+            }),
+          })
+          const shift = mapBackendShift(response.shift)
+          await writeActiveShift(shift)
+          return shift
+        }
       }
 
       const shift: ShiftSummary = {
@@ -1038,18 +1178,36 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async addCashMovement(input) {
       if (await isOnlineSyncEnabled()) {
-        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/movements', {
-          method: 'POST',
-          body: JSON.stringify({
-            movementType: input.movementType,
-            amountCents: input.amountCents,
-            reason: input.reason ?? null,
-            userId: input.userId ?? null,
-          }),
-        })
-        const shift = mapBackendShift(response.shift)
-        await writeActiveShift(shift)
-        return shift
+        if (supabaseSync) {
+          const session = await getSupabaseSession()
+          const current = await readActiveShift()
+          if (session && current && !current.closedAt) {
+            const shift = await supabaseSync.addCashMovement({
+              shiftId: current.id,
+              storeId: session.storeId,
+              organizationId: session.organizationId,
+              movementType: input.movementType,
+              amountCents: input.amountCents,
+              reason: input.reason,
+              userId: input.userId ?? null,
+            })
+            await writeActiveShift(shift)
+            return shift
+          }
+        } else {
+          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/movements', {
+            method: 'POST',
+            body: JSON.stringify({
+              movementType: input.movementType,
+              amountCents: input.amountCents,
+              reason: input.reason ?? null,
+              userId: input.userId ?? null,
+            }),
+          })
+          const shift = mapBackendShift(response.shift)
+          await writeActiveShift(shift)
+          return shift
+        }
       }
 
       const shift = await updateCachedShift((current) => {
@@ -1087,16 +1245,31 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async closeShift(input) {
       if (await isOnlineSyncEnabled()) {
-        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/close', {
-          method: 'POST',
-          body: JSON.stringify({
-            countedCashCents: input.countedCashCents,
-            userId: input.userId ?? null,
-          }),
-        })
-        const shift = mapBackendShift(response.shift)
-        await writeActiveShift(null)
-        return shift
+        if (supabaseSync) {
+          const session = await getSupabaseSession()
+          const current = await readActiveShift()
+          if (session && current && !current.closedAt) {
+            const shift = await supabaseSync.closeShift({
+              shiftId: current.id,
+              countedCashCents: input.countedCashCents,
+              expectedCashCents: current.expectedCashCents,
+              userId: input.userId ?? null,
+            })
+            await writeActiveShift(null)
+            return shift
+          }
+        } else {
+          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/close', {
+            method: 'POST',
+            body: JSON.stringify({
+              countedCashCents: input.countedCashCents,
+              userId: input.userId ?? null,
+            }),
+          })
+          const shift = mapBackendShift(response.shift)
+          await writeActiveShift(null)
+          return shift
+        }
       }
 
       const current = await readActiveShift()
@@ -1158,7 +1331,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (settings.syncMode === 'online-sync') {
         try {
-          await ensureRemoteSession()
+          if (!supabaseSync) {
+            await ensureRemoteSession()
+          }
           await syncCatalogFromBootstrap()
           await flushOutbox()
         } catch {
@@ -1187,33 +1362,46 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loginUser(username, password) {
       if (await isOnlineSyncEnabled()) {
         try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              username,
-              password,
-            }),
-          })
-
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
+          if (supabaseSync) {
+            const result = await supabaseSync.loginUser(username, password)
+            if (result) {
+              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+              await store.write(storageKeys.users, [
+                result.user,
+                ...existingUsers.filter((u) => u.id !== result.user.id),
+              ])
+              await store.write(storageKeys.session, result.session)
+              await writeSupabaseSession(result.syncSession)
+              return { user: result.user, session: result.session }
             }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            const mergedUsers = [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ]
-            await store.write(storageKeys.users, mergedUsers)
-            await store.write(storageKeys.session, body.session)
-            return body
+          } else {
+            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                organizationSlug: syncConfig?.organizationSlug,
+                storeCode: syncConfig?.storeCode,
+                username,
+                password,
+              }),
+            })
+
+            if (response.ok) {
+              const body = await response.json() as {
+                user: UserAccount
+                session: AuthSession
+              }
+              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+              await store.write(storageKeys.users, [
+                body.user,
+                ...existingUsers.filter((entry) => entry.id !== body.user.id),
+              ])
+              await store.write(storageKeys.session, body.session)
+              return body
+            }
           }
         } catch {
           // Fall back to local auth below.
@@ -1242,34 +1430,47 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async registerUser(input) {
       if (await isOnlineSyncEnabled()) {
         try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              fullName: input.fullName,
-              username: input.username,
-              password: input.password,
-            }),
-          })
-
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
+          if (supabaseSync) {
+            const result = await supabaseSync.registerUser(input)
+            if (result) {
+              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+              await store.write(storageKeys.users, [
+                result.user,
+                ...existingUsers.filter((u) => u.id !== result.user.id),
+              ])
+              await store.write(storageKeys.session, result.session)
+              await writeSupabaseSession(result.syncSession)
+              return { user: result.user, session: result.session }
             }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            const mergedUsers = [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ]
-            await store.write(storageKeys.users, mergedUsers)
-            await store.write(storageKeys.session, body.session)
-            return body
+          } else {
+            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                organizationSlug: syncConfig?.organizationSlug,
+                storeCode: syncConfig?.storeCode,
+                fullName: input.fullName,
+                username: input.username,
+                password: input.password,
+              }),
+            })
+
+            if (response.ok) {
+              const body = await response.json() as {
+                user: UserAccount
+                session: AuthSession
+              }
+              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+              await store.write(storageKeys.users, [
+                body.user,
+                ...existingUsers.filter((entry) => entry.id !== body.user.id),
+              ])
+              await store.write(storageKeys.session, body.session)
+              return body
+            }
           }
         } catch {
           // Fall back to local registration below.
@@ -1319,14 +1520,20 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          await backendFetch<{ user: UserAccount }>(`/api/staff-users/${userId}/role`, {
-            method: 'PATCH',
-            body: JSON.stringify({ roleId }),
-          })
-
-          const refreshedUsers = await tryLoadRemoteUsers()
-          if (refreshedUsers) {
-            return
+          if (supabaseSync) {
+            const session = await getSupabaseSession()
+            if (session) {
+              await supabaseSync.updateUserRole(userId, roleId, session.organizationId)
+              const refreshedUsers = await tryLoadRemoteUsers()
+              if (refreshedUsers) return
+            }
+          } else {
+            await backendFetch<{ user: UserAccount }>(`/api/staff-users/${userId}/role`, {
+              method: 'PATCH',
+              body: JSON.stringify({ roleId }),
+            })
+            const refreshedUsers = await tryLoadRemoteUsers()
+            if (refreshedUsers) return
           }
         } catch {
           // Keep the local role update even if the backend call fails.
@@ -1353,11 +1560,19 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles', {
-            method: 'PUT',
-            body: JSON.stringify({ roles }),
-          })
-          await store.write(storageKeys.roles, response.roles)
+          if (supabaseSync) {
+            const session = await getSupabaseSession()
+            if (session) {
+              const saved = await supabaseSync.saveRoles(roles, session.organizationId)
+              await store.write(storageKeys.roles, saved)
+            }
+          } else {
+            const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles', {
+              method: 'PUT',
+              body: JSON.stringify({ roles }),
+            })
+            await store.write(storageKeys.roles, response.roles)
+          }
         } catch {
           // Keep local roles cached if remote sync fails.
         }

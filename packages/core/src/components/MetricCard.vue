@@ -3,6 +3,7 @@ defineProps<{
   label: string
   value: string
   delta?: { value: string; positive: boolean } | null
+  compareLabel?: string
 }>()
 </script>
 
@@ -10,12 +11,14 @@ defineProps<{
   <article class="metric-card">
     <p class="metric-card__label">{{ label }}</p>
     <strong class="metric-card__value">{{ value }}</strong>
-    <p
-      v-if="delta != null"
-      class="metric-card__delta"
-      :class="delta.positive ? 'metric-card__delta--up' : 'metric-card__delta--down'"
-    >
-      {{ delta.positive ? '↑' : '↓' }} {{ delta.value }}
+    <p v-if="delta != null" class="metric-card__compare">
+      <span
+        class="metric-card__delta"
+        :class="delta.positive ? 'metric-card__delta--up' : 'metric-card__delta--down'"
+      >
+        {{ delta.positive ? '↑' : '↓' }} {{ delta.value }}
+      </span>
+      <span v-if="compareLabel" class="metric-card__compare-label">{{ compareLabel }}</span>
     </p>
   </article>
 </template>
@@ -42,12 +45,24 @@ defineProps<{
   color: var(--text-primary);
 }
 
-.metric-card__delta {
+.metric-card__compare {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
   margin: 0;
+}
+
+.metric-card__delta {
   font: var(--type-caption);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .metric-card__delta--up   { color: var(--success); }
 .metric-card__delta--down { color: var(--danger); }
+
+.metric-card__compare-label {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
 </style>

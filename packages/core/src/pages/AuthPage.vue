@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye } from '@lucide/vue'
+import { Eye, EyeOff, UserRound } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@pos/core/stores/auth'
@@ -18,11 +18,20 @@ const registerForm = ref({
   username: '',
   password: '',
 })
+const loginPasswordVisible = ref(false)
+const registerPasswordVisible = ref(false)
+
+const heading = computed(() => (mode.value === 'login' ? 'Welcome back' : 'Create your account'))
+const subtitle = computed(() =>
+  mode.value === 'login'
+    ? 'Sign in to start your shift.'
+    : "Set up sign-in for this register — it only takes a minute.",
+)
 
 const registerHint = computed(() =>
   auth.hasUsers
     ? 'New accounts start as Cashier and can be reassigned by an admin later.'
-    : 'The first account becomes the Admin account for this register.',
+    : "You'll be the Admin for this register, since you're the first to sign up.",
 )
 
 function resolveDestination() {
@@ -71,14 +80,6 @@ onMounted(async () => {
 <template>
   <div class="auth-page">
     <section class="auth-card">
-      <div class="auth-card__hero">
-        <p class="auth-card__eyebrow">Access control</p>
-        <h1 class="auth-card__title">Sign in to your POS workspace.</h1>
-        <p class="auth-card__copy">
-          User accounts are stored on this device, and each role can be allowed or blocked per page.
-        </p>
-      </div>
-
       <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">
         <button
           class="segment-button"
@@ -98,10 +99,10 @@ onMounted(async () => {
         </button>
       </div>
 
-      <button class="segment-button auth-guest-button" type="button" @click="continueAsGuest">
-        <Eye :size="16" />
-        <span>Continue as Guest</span>
-      </button>
+      <div class="auth-card__hero">
+        <h1 class="auth-card__title">{{ heading }}</h1>
+        <p class="auth-card__copy">{{ subtitle }}</p>
+      </div>
 
       <form v-if="mode === 'login'" class="auth-form" @submit.prevent="submitLogin">
         <label class="settings-field">
@@ -110,7 +111,23 @@ onMounted(async () => {
         </label>
         <label class="settings-field">
           <span class="settings-row__label">Password</span>
-          <input v-model="loginForm.password" class="sheet-input" type="password" autocomplete="current-password">
+          <div class="auth-password-field">
+            <input
+              v-model="loginForm.password"
+              class="sheet-input"
+              :type="loginPasswordVisible ? 'text' : 'password'"
+              autocomplete="current-password"
+            >
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-label="loginPasswordVisible ? 'Hide password' : 'Show password'"
+              @click="loginPasswordVisible = !loginPasswordVisible"
+            >
+              <EyeOff v-if="loginPasswordVisible" :size="16" />
+              <Eye v-else :size="16" />
+            </button>
+          </div>
         </label>
         <button class="primary-button auth-submit" type="submit">Sign in</button>
       </form>
@@ -126,13 +143,37 @@ onMounted(async () => {
         </label>
         <label class="settings-field">
           <span class="settings-row__label">Password</span>
-          <input v-model="registerForm.password" class="sheet-input" type="password" autocomplete="new-password">
+          <div class="auth-password-field">
+            <input
+              v-model="registerForm.password"
+              class="sheet-input"
+              :type="registerPasswordVisible ? 'text' : 'password'"
+              autocomplete="new-password"
+            >
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-label="registerPasswordVisible ? 'Hide password' : 'Show password'"
+              @click="registerPasswordVisible = !registerPasswordVisible"
+            >
+              <EyeOff v-if="registerPasswordVisible" :size="16" />
+              <Eye v-else :size="16" />
+            </button>
+          </div>
         </label>
-        <p class="auth-helper">{{ registerHint }}</p>
         <button class="primary-button auth-submit" type="submit">Create account</button>
+        <p class="auth-helper">{{ registerHint }}</p>
       </form>
 
       <p v-if="auth.authError" class="auth-error">{{ auth.authError }}</p>
+
+      <div class="auth-guest">
+        <div class="auth-divider" role="separator"><span>or</span></div>
+        <button class="auth-guest-button" type="button" @click="continueAsGuest">
+          <UserRound :size="16" />
+          <span>Continue as guest</span>
+        </button>
+      </div>
     </section>
   </div>
 </template>

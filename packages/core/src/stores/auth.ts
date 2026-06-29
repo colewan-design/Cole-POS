@@ -77,7 +77,13 @@ export const useAuthStore = defineStore('auth', () => {
     appPageKeys.filter((page) => currentRole.value?.permissions[page]),
   )
 
-  const firstAccessiblePage = computed<AppPageKey | null>(() => accessiblePages.value[0] ?? null)
+  const firstAccessiblePage = computed<AppPageKey | null>(() => {
+    if (currentRole.value?.id === 'cashier' && accessiblePages.value.includes('register')) {
+      return 'register'
+    }
+
+    return accessiblePages.value[0] ?? null
+  })
 
   async function initialize() {
     if (isReady.value) {
