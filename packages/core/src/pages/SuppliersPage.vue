@@ -50,6 +50,7 @@ const supplierBlueprints = [
   { id: 'north-grain', name: 'North Grain Wholesale', categoryIds: ['dairy', 'groceries', 'snacks'], leadTimeDays: 3, orderWindow: 'Daily before 3 PM' },
   { id: 'golden-cup', name: 'Golden Cup Beverage Traders', categoryIds: ['coffee', 'tea', 'cold-drinks'], leadTimeDays: 1, orderWindow: 'Same-day local dispatch' },
   { id: 'hearth-kitchen', name: 'Hearth Kitchen Provisions', categoryIds: ['pastry', 'starters', 'mains', 'desserts'], leadTimeDays: 2, orderWindow: 'Tue / Fri warehouse release' },
+  { id: 'bloom-beauty', name: 'Bloom Beauty Supply Co.', categoryIds: ['salon-retail'], leadTimeDays: 3, orderWindow: 'Wed cut-off, Sat delivery' },
 ]
 
 function supplierForCategory(categoryId: string) {

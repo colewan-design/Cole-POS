@@ -1,4 +1,4 @@
-export type BusinessMode = 'coffee-shop' | 'grocery' | 'restaurant'
+export type BusinessMode = 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'
 export type ProductKind = 'standard' | 'weighted'
 export type OrderType = 'dine_in' | 'takeaway'
 export type PaymentMethod = 'cash' | 'card' | 'ewallet'
@@ -197,7 +197,7 @@ export const defaultRoles: RoleDefinition[] = [
   {
     id: 'manager',
     name: 'Manager',
-    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'inventory', 'reports', 'register', 'settings']),
+    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers', 'inventory', 'reports', 'register', 'settings']),
   },
   {
     id: 'cashier',
@@ -207,7 +207,7 @@ export const defaultRoles: RoleDefinition[] = [
   {
     id: 'guest',
     name: 'Guest',
-    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'inventory', 'reports', 'register', 'settings']),
+    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers', 'inventory', 'reports', 'register', 'settings']),
   },
 ]
 
@@ -219,6 +219,8 @@ export function businessModeLabel(mode: BusinessMode): string {
       return 'Grocery store'
     case 'restaurant':
       return 'Restaurant'
+    case 'nail-salon':
+      return 'Nail Salon'
   }
 }
 
@@ -266,6 +268,11 @@ export const demoCategories: Category[] = [
   { id: 'mains', name: 'Mains' },
   { id: 'desserts', name: 'Desserts' },
   { id: 'beverages', name: 'Beverages' },
+  { id: 'manicures', name: 'Manicures' },
+  { id: 'pedicures', name: 'Pedicures' },
+  { id: 'nail-enhancements', name: 'Enhancements' },
+  { id: 'nail-addons', name: 'Add-ons' },
+  { id: 'salon-retail', name: 'Retail' },
 ]
 
 function standardProduct(
@@ -305,6 +312,11 @@ const skuOffsets: Record<string, number> = {
   MAN: 900,
   DES: 1000,
   BEV: 1100,
+  MNC: 1200,
+  PED: 1300,
+  ENH: 1400,
+  ADO: 1500,
+  RET: 1600,
 }
 
 export const demoProducts: Product[] = [
@@ -725,6 +737,83 @@ export const demoProducts: Product[] = [
   }),
   standardProduct(6, 'beverages', 'BEV', 'san-miguel', 'San Miguel Beer', 11000, ['restaurant'], {
     stockQty: 30, lowStockThreshold: 10,
+  }),
+
+  // Nail Salon — Manicures
+  standardProduct(1, 'manicures', 'MNC', 'classic-manicure', 'Classic Manicure', 25000, ['nail-salon'], {
+    imageUrl: '/products/classic-manicure.jpg',
+  }),
+  standardProduct(2, 'manicures', 'MNC', 'express-manicure', 'Express Manicure', 18000, ['nail-salon'], {
+    imageUrl: '/products/express-manicure.jpg',
+  }),
+  standardProduct(3, 'manicures', 'MNC', 'gel-manicure', 'Gel Manicure', 45000, ['nail-salon'], {
+    imageUrl: '/products/gel-manicure.jpg',
+  }),
+  standardProduct(4, 'manicures', 'MNC', 'spa-manicure', 'Spa Manicure', 55000, ['nail-salon'], {
+    imageUrl: '/products/spa-manicure.jpg',
+  }),
+
+  // Nail Salon — Pedicures
+  standardProduct(1, 'pedicures', 'PED', 'classic-pedicure', 'Classic Pedicure', 35000, ['nail-salon'], {
+    imageUrl: '/products/classic-pedicure.jpg',
+  }),
+  standardProduct(2, 'pedicures', 'PED', 'express-pedicure', 'Express Pedicure', 25000, ['nail-salon'], {
+    imageUrl: '/products/express-pedicure.jpg',
+  }),
+  standardProduct(3, 'pedicures', 'PED', 'gel-pedicure', 'Gel Pedicure', 55000, ['nail-salon'], {
+    imageUrl: '/products/gel-pedicure.jpg',
+  }),
+  standardProduct(4, 'pedicures', 'PED', 'spa-pedicure', 'Spa Pedicure', 65000, ['nail-salon'], {
+    imageUrl: '/products/spa-pedicure.jpg',
+  }),
+
+  // Nail Salon — Enhancements
+  standardProduct(1, 'nail-enhancements', 'ENH', 'nail-refill', 'Nail Refill / Fill-in', 50000, ['nail-salon'], {
+    imageUrl: '/products/nail-refill.jpg',
+  }),
+  standardProduct(2, 'nail-enhancements', 'ENH', 'acrylic-full-set', 'Acrylic Full Set', 80000, ['nail-salon'], {
+    imageUrl: '/products/acrylic-full-set.jpg',
+  }),
+  standardProduct(3, 'nail-enhancements', 'ENH', 'dip-powder-full-set', 'Dip Powder Full Set', 85000, ['nail-salon'], {
+    imageUrl: '/products/dip-powder-full-set.jpg',
+  }),
+  standardProduct(4, 'nail-enhancements', 'ENH', 'gel-extension-full-set', 'Gel Extension Full Set', 90000, ['nail-salon'], {
+    imageUrl: '/products/gel-extension-full-set.jpg',
+  }),
+
+  // Nail Salon — Add-ons
+  standardProduct(1, 'nail-addons', 'ADO', 'nail-art-per-nail', 'Nail Art (per nail)', 5000, ['nail-salon'], {
+    imageUrl: '/products/nail-art-per-nail.jpg',
+  }),
+  standardProduct(2, 'nail-addons', 'ADO', 'rhinestone-accent', 'Rhinestone Accent', 8000, ['nail-salon'], {
+    imageUrl: '/products/rhinestone-accent.jpg',
+  }),
+  standardProduct(3, 'nail-addons', 'ADO', 'french-tip', 'French Tip', 10000, ['nail-salon'], {
+    imageUrl: '/products/french-tip.jpg',
+  }),
+  standardProduct(4, 'nail-addons', 'ADO', 'paraffin-wax-treatment', 'Paraffin Wax Treatment', 20000, ['nail-salon'], {
+    imageUrl: '/products/paraffin-wax-treatment.jpg',
+  }),
+  standardProduct(5, 'nail-addons', 'ADO', 'chrome-cat-eye-finish', 'Chrome / Cat Eye Finish', 15000, ['nail-salon'], {
+    imageUrl: '/products/chrome-cat-eye-finish.jpg',
+  }),
+
+  // Nail Salon — Retail
+  standardProduct(1, 'salon-retail', 'RET', 'nail-polish-bottle', 'Nail Polish Bottle', 15000, ['nail-salon'], {
+    imageUrl: '/products/nail-polish-bottle.jpg',
+    stockQty: 40, lowStockThreshold: 10,
+  }),
+  standardProduct(2, 'salon-retail', 'RET', 'cuticle-oil', 'Cuticle Oil', 18000, ['nail-salon'], {
+    imageUrl: '/products/cuticle-oil.jpg',
+    stockQty: 30, lowStockThreshold: 8,
+  }),
+  standardProduct(3, 'salon-retail', 'RET', 'hand-cream', 'Hand Cream', 22000, ['nail-salon'], {
+    imageUrl: '/products/hand-cream.jpg',
+    stockQty: 25, lowStockThreshold: 8,
+  }),
+  standardProduct(4, 'salon-retail', 'RET', 'nail-strengthener', 'Nail Strengthener', 25000, ['nail-salon'], {
+    imageUrl: '/products/nail-strengthener.jpg',
+    stockQty: 20, lowStockThreshold: 6,
   }),
 ]
 

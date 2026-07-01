@@ -17,7 +17,7 @@ onMounted(() => {
 
 const range = ref<Range>('week')
 const paymentFilter = ref<'all' | 'cash' | 'card' | 'ewallet'>('all')
-const modeFilter = ref<'all' | 'coffee-shop' | 'grocery' | 'restaurant'>('all')
+const modeFilter = ref<'all' | 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'>('all')
 const searchQuery = ref('')
 const now = new Date()
 
@@ -169,7 +169,7 @@ const paymentMix = computed(() => {
 })
 
 const modeBreakdown = computed(() => {
-  const modes = ['coffee-shop', 'grocery', 'restaurant'] as const
+  const modes = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as const
   const total = grossSales.value || 1
 
   return modes
@@ -330,6 +330,7 @@ const rangeCaption = computed(() => {
               <option value="coffee-shop">Coffee shop</option>
               <option value="grocery">Grocery</option>
               <option value="restaurant">Restaurant</option>
+              <option value="nail-salon">Nail salon</option>
             </select>
           </div>
         </div>

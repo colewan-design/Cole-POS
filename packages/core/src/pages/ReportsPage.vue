@@ -81,7 +81,7 @@ const paymentTotals = computed(() => {
 })
 
 const businessModeTotals = computed(() => {
-  const modes = ['coffee-shop', 'grocery', 'restaurant'] as const
+  const modes = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as const
   return modes
     .map((mode) => {
       const orders = reportOrders.value.filter((order) => order.businessMode === mode)

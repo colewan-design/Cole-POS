@@ -477,18 +477,28 @@ function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[
   const demoProductMap = new Map(demoProducts.map((p) => [p.id, p]))
 
   let stockPatched = false
+  let imagePatched = false
   const patchedProducts = storedProducts.map((p) => {
     const demo = demoProductMap.get(p.id)
-    if (demo && p.stockQty === undefined && demo.stockQty !== undefined) {
-      stockPatched = true
-      return { ...p, stockQty: demo.stockQty, lowStockThreshold: demo.lowStockThreshold }
+    if (!demo) {
+      return p
     }
-    return p
+
+    let patched = p
+    if (p.stockQty === undefined && demo.stockQty !== undefined) {
+      stockPatched = true
+      patched = { ...patched, stockQty: demo.stockQty, lowStockThreshold: demo.lowStockThreshold }
+    }
+    if (!patched.imageUrl && demo.imageUrl) {
+      imagePatched = true
+      patched = { ...patched, imageUrl: demo.imageUrl, imageAttributionUrl: demo.imageAttributionUrl }
+    }
+    return patched
   })
 
   const storedProductIds = new Set(storedProducts.map((product) => product.id))
   const newDemoProducts = demoProducts.filter((product) => !storedProductIds.has(product.id))
-  const productsChanged = newDemoProducts.length > 0 || stockPatched
+  const productsChanged = newDemoProducts.length > 0 || stockPatched || imagePatched
   const mergedProducts = productsChanged
     ? [...patchedProducts, ...newDemoProducts]
     : storedProducts

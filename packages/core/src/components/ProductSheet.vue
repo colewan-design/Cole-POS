@@ -3,7 +3,7 @@ import { ImagePlus, Trash2, X } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { usePosStore } from '@pos/core/stores/pos'
-import { type BusinessMode, type Product } from '@pos/shared/index'
+import { businessModeLabel, type BusinessMode, type Product } from '@pos/shared/index'
 
 const props = defineProps<{
   product?: Product
@@ -290,7 +290,7 @@ function handleKeydown(e: KeyboardEvent) {
                 <p class="section-label">Available in</p>
                 <div class="product-sheet__modes">
                   <label
-                    v-for="mode in (['coffee-shop', 'grocery', 'restaurant'] as BusinessMode[])"
+                    v-for="mode in (['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as BusinessMode[])"
                     :key="mode"
                     class="product-sheet__mode-label"
                   >
@@ -299,7 +299,7 @@ function handleKeydown(e: KeyboardEvent) {
                       :checked="form.businessModes.includes(mode)"
                       @change="toggleMode(mode)"
                     />
-                    <span>{{ mode === 'coffee-shop' ? 'Coffee Shop' : mode === 'grocery' ? 'Grocery' : 'Restaurant' }}</span>
+                    <span>{{ businessModeLabel(mode) }}</span>
                   </label>
                 </div>
               </div>

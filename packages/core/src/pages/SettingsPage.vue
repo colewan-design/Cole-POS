@@ -82,7 +82,7 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant'] as const).map((mode) => ({
+const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as const).map((mode) => ({
   value: mode,
   label: businessModeLabel(mode),
 }))

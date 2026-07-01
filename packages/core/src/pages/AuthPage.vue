@@ -80,6 +80,11 @@ onMounted(async () => {
 <template>
   <div class="auth-page">
     <section class="auth-card">
+      <div class="auth-brand">
+        <div class="auth-brand-mark">C</div>
+        <strong>ColePOS</strong>
+      </div>
+
       <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">
         <button
           class="segment-button"
@@ -104,66 +109,68 @@ onMounted(async () => {
         <p class="auth-card__copy">{{ subtitle }}</p>
       </div>
 
-      <form v-if="mode === 'login'" class="auth-form" @submit.prevent="submitLogin">
-        <label class="settings-field">
-          <span class="settings-row__label">Username</span>
-          <input v-model="loginForm.username" class="sheet-input" type="text" autocomplete="username">
-        </label>
-        <label class="settings-field">
-          <span class="settings-row__label">Password</span>
-          <div class="auth-password-field">
-            <input
-              v-model="loginForm.password"
-              class="sheet-input"
-              :type="loginPasswordVisible ? 'text' : 'password'"
-              autocomplete="current-password"
-            >
-            <button
-              class="auth-password-toggle"
-              type="button"
-              :aria-label="loginPasswordVisible ? 'Hide password' : 'Show password'"
-              @click="loginPasswordVisible = !loginPasswordVisible"
-            >
-              <EyeOff v-if="loginPasswordVisible" :size="16" />
-              <Eye v-else :size="16" />
-            </button>
-          </div>
-        </label>
-        <button class="primary-button auth-submit" type="submit">Sign in</button>
-      </form>
+      <Transition name="auth-form-fade" mode="out-in">
+        <form v-if="mode === 'login'" key="login" class="auth-form" @submit.prevent="submitLogin">
+          <label class="settings-field">
+            <span class="settings-row__label">Username</span>
+            <input v-model="loginForm.username" class="sheet-input" type="text" autocomplete="username">
+          </label>
+          <label class="settings-field">
+            <span class="settings-row__label">Password</span>
+            <div class="auth-password-field">
+              <input
+                v-model="loginForm.password"
+                class="sheet-input"
+                :type="loginPasswordVisible ? 'text' : 'password'"
+                autocomplete="current-password"
+              >
+              <button
+                class="auth-password-toggle"
+                type="button"
+                :aria-label="loginPasswordVisible ? 'Hide password' : 'Show password'"
+                @click="loginPasswordVisible = !loginPasswordVisible"
+              >
+                <EyeOff v-if="loginPasswordVisible" :size="16" />
+                <Eye v-else :size="16" />
+              </button>
+            </div>
+          </label>
+          <button class="primary-button auth-submit" type="submit">Sign in</button>
+        </form>
 
-      <form v-else class="auth-form" @submit.prevent="submitRegistration">
-        <label class="settings-field">
-          <span class="settings-row__label">Full name</span>
-          <input v-model="registerForm.fullName" class="sheet-input" type="text" autocomplete="name">
-        </label>
-        <label class="settings-field">
-          <span class="settings-row__label">Username</span>
-          <input v-model="registerForm.username" class="sheet-input" type="text" autocomplete="username">
-        </label>
-        <label class="settings-field">
-          <span class="settings-row__label">Password</span>
-          <div class="auth-password-field">
-            <input
-              v-model="registerForm.password"
-              class="sheet-input"
-              :type="registerPasswordVisible ? 'text' : 'password'"
-              autocomplete="new-password"
-            >
-            <button
-              class="auth-password-toggle"
-              type="button"
-              :aria-label="registerPasswordVisible ? 'Hide password' : 'Show password'"
-              @click="registerPasswordVisible = !registerPasswordVisible"
-            >
-              <EyeOff v-if="registerPasswordVisible" :size="16" />
-              <Eye v-else :size="16" />
-            </button>
-          </div>
-        </label>
-        <button class="primary-button auth-submit" type="submit">Create account</button>
-        <p class="auth-helper">{{ registerHint }}</p>
-      </form>
+        <form v-else key="register" class="auth-form" @submit.prevent="submitRegistration">
+          <label class="settings-field">
+            <span class="settings-row__label">Full name</span>
+            <input v-model="registerForm.fullName" class="sheet-input" type="text" autocomplete="name">
+          </label>
+          <label class="settings-field">
+            <span class="settings-row__label">Username</span>
+            <input v-model="registerForm.username" class="sheet-input" type="text" autocomplete="username">
+          </label>
+          <label class="settings-field">
+            <span class="settings-row__label">Password</span>
+            <div class="auth-password-field">
+              <input
+                v-model="registerForm.password"
+                class="sheet-input"
+                :type="registerPasswordVisible ? 'text' : 'password'"
+                autocomplete="new-password"
+              >
+              <button
+                class="auth-password-toggle"
+                type="button"
+                :aria-label="registerPasswordVisible ? 'Hide password' : 'Show password'"
+                @click="registerPasswordVisible = !registerPasswordVisible"
+              >
+                <EyeOff v-if="registerPasswordVisible" :size="16" />
+                <Eye v-else :size="16" />
+              </button>
+            </div>
+          </label>
+          <button class="primary-button auth-submit" type="submit">Create account</button>
+          <p class="auth-helper">{{ registerHint }}</p>
+        </form>
+      </Transition>
 
       <p v-if="auth.authError" class="auth-error">{{ auth.authError }}</p>
 

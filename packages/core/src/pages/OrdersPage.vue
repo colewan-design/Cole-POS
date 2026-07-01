@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { businessModeLabel, formatCompactDate, formatCurrency } from '@pos/shared/index'
+import { Printer } from '@lucide/vue'
+import { businessModeLabel, formatCompactDate, formatCurrency, type OrderSummary } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
+import { printReceipt } from '@pos/core/utils/receipt'
 
 const store = usePosStore()
 
@@ -10,6 +12,13 @@ onMounted(() => {
     void store.initialize()
   }
 })
+
+function handlePrintReceipt(order: OrderSummary) {
+  printReceipt(order, {
+    name: store.settings.businessName,
+    imageUrl: store.settings.businessImageUrl,
+  })
+}
 
 const recentOrders = computed(() => store.orders.slice(0, 20))
 const revenueCents = computed(() => store.orders.reduce((sum, order) => sum + order.totalCents, 0))
@@ -61,6 +70,14 @@ const digitalOrders = computed(() => store.orders.filter((order) => order.paymen
         <div class="history-row__aside">
           <span class="history-row__mode">{{ businessModeLabel(order.businessMode) }}</span>
           <strong class="history-row__total">{{ formatCurrency(order.totalCents) }}</strong>
+          <button
+            class="icon-button icon-button--sm"
+            type="button"
+            :aria-label="`Print receipt for ticket ${order.ticketNumber}`"
+            @click="handlePrintReceipt(order)"
+          >
+            <Printer :size="15" />
+          </button>
         </div>
       </article>
     </div>

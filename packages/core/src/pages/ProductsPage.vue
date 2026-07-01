@@ -309,6 +309,7 @@ async function confirmDeleteCategory(id: string) {
             { value: 'coffee-shop', label: 'Coffee shop' },
             { value: 'grocery', label: 'Grocery' },
             { value: 'restaurant', label: 'Restaurant' },
+            { value: 'nail-salon', label: 'Nail salon' },
           ]"
           :key="opt.value"
           class="segment-button"

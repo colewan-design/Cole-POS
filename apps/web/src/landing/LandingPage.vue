@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, type ObjectDirective } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, type ObjectDirective } from 'vue'
 import AnalyticsPage from '@pos/core/pages/AnalyticsPage.vue'
 import GroceryOrderPanel from '@pos/core/components/GroceryOrderPanel.vue'
 import GroceryProductGrid from '@pos/core/components/GroceryProductGrid.vue'
@@ -46,6 +46,17 @@ function onCtaPointerLeave() {
   ctaParticles.value?.clearPointer()
 }
 
+// Cycles the "Coffee Shop / Grocery Store / Restaurant" pill in the hero's
+// floating modes card so the mockup reads as alive rather than a static screenshot.
+const heroModeIndex = ref(0)
+let heroModeTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  heroModeTimer = setInterval(() => {
+    heroModeIndex.value = (heroModeIndex.value + 1) % 3
+  }, 2400)
+})
+onBeforeUnmount(() => clearInterval(heroModeTimer))
+
 const registerTilt = reactive({ rx: 0, ry: 0, gx: 50, gy: 50, go: 0 })
 function onRegisterTiltMove(e: PointerEvent) {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -63,6 +74,52 @@ function onRegisterTiltLeave() {
   registerTilt.ry = 0
   registerTilt.go = 0
 }
+
+// Auto-plays a short "items adding to cart" sequence the first time the live
+// register demo scrolls into view, so the section backs up the "checkout in
+// under 10 seconds" claim instead of sitting at a static ₱0.00 total.
+const demoWrap = ref<HTMLElement | null>(null)
+let demoAutoPlayed = false
+async function playDemoSequence() {
+  if (demoAutoPlayed) return
+  demoAutoPlayed = true
+  if (!store.isReady) await store.initialize()
+  store.clearCart()
+  const picks = store.products
+    .filter((product) => product.businessModes.includes(store.settings.businessMode))
+    .slice(0, 3)
+  for (const product of picks) {
+    await new Promise((resolve) => setTimeout(resolve, 550))
+    store.addProduct(product.id)
+  }
+}
+onMounted(() => {
+  const el = demoWrap.value
+  if (!el) return
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0]?.isIntersecting) {
+        void playDemoSequence()
+        observer.unobserve(el)
+      }
+    },
+    { threshold: 0.45 },
+  )
+  observer.observe(el)
+})
+
+// Gives the order total a quick pulse whenever it changes, reinforcing that
+// the demo cart is really updating rather than just re-rendering text.
+watch(
+  () => store.totalCents,
+  () => {
+    const totalEl = demoWrap.value?.querySelector<HTMLElement>('.total-amount')
+    if (!totalEl) return
+    totalEl.classList.remove('lp-total-pulse')
+    void totalEl.offsetWidth
+    totalEl.classList.add('lp-total-pulse')
+  },
+)
 
 const submitted = ref(false)
 function handleSubmit(e: Event) {
@@ -256,9 +313,9 @@ function toggleFaq(i: number) {
               <span class="lp-float-dot" style="background:#28c840"></span>
             </div>
             <div class="lp-float-body">
-              <span class="lp-float-pill"><span class="lp-float-pill-dot" style="background:var(--accent)"></span>Coffee Shop</span>
-              <span class="lp-float-pill"><span class="lp-float-pill-dot" style="background:var(--success)"></span>Grocery Store</span>
-              <span class="lp-float-pill"><span class="lp-float-pill-dot" style="background:var(--warning)"></span>Restaurant</span>
+              <span class="lp-float-pill" :class="{ 'lp-float-pill--active': heroModeIndex === 0 }"><span class="lp-float-pill-dot" style="background:var(--accent)"></span>Coffee Shop</span>
+              <span class="lp-float-pill" :class="{ 'lp-float-pill--active': heroModeIndex === 1 }"><span class="lp-float-pill-dot" style="background:var(--success)"></span>Grocery Store</span>
+              <span class="lp-float-pill" :class="{ 'lp-float-pill--active': heroModeIndex === 2 }"><span class="lp-float-pill-dot" style="background:var(--warning)"></span>Restaurant</span>
             </div>
           </div>
 
@@ -353,7 +410,7 @@ function toggleFaq(i: number) {
           </button>
         </div>
 
-        <div v-reveal class="lp-demo-wrap reveal--scale reveal--lift">
+        <div ref="demoWrap" v-reveal class="lp-demo-wrap reveal--scale reveal--lift">
         <div
           class="lp-demo-window--tilt"
           :style="{
@@ -438,20 +495,22 @@ function toggleFaq(i: number) {
 
     <!-- ── Analytics — live component ────────────────────────────────── -->
     <section id="analytics" class="lp-section lp-section--surface">
-      <div class="lp-container">
-        <p v-reveal class="lp-eyebrow-label">Analytics</p>
-        <h2 v-reveal class="lp-title">Know your numbers. Every day.</h2>
-        <p v-reveal class="lp-subcopy">
-          This is the real Analytics page, fed by the orders flowing through the register above. Revenue, payment mix, top products, and hourly trends — on one screen, updated live.
-        </p>
-
-        <div v-reveal class="lp-demo-wrap reveal--scale reveal--lift">
+      <div class="lp-container lp-split-grid">
+        <div v-reveal class="lp-demo-wrap lp-split-visual reveal--scale reveal--lift">
           <div class="lp-demo-window--analytics">
             <div class="app-demo-frame lp-demo-window__body lp-demo-window__body--analytics">
               <AnalyticsPage />
             </div>
             <div class="lp-demo-fade" aria-hidden="true"></div>
           </div>
+        </div>
+
+        <div class="lp-split-text">
+          <p v-reveal class="lp-eyebrow-label">Analytics</p>
+          <h2 v-reveal class="lp-title">Know your numbers. Every day.</h2>
+          <p v-reveal class="lp-subcopy">
+            This is the real Analytics page, fed by the orders flowing through the register above. Revenue, payment mix, top products, and hourly trends — on one screen, updated live.
+          </p>
         </div>
       </div>
     </section>
@@ -529,7 +588,7 @@ function toggleFaq(i: number) {
     </section>
 
     <!-- ── Business fit ─────────────────────────────────────────────── -->
-    <section id="business-types" class="lp-section lp-section--surface">
+    <section id="business-types" class="lp-section lp-section--tint">
       <div class="lp-container">
         <p v-reveal class="lp-eyebrow-label">Business types</p>
         <h2 v-reveal class="lp-title">Fits just right for your business.</h2>
@@ -671,10 +730,13 @@ function toggleFaq(i: number) {
    Teleport-to-body PaymentSheet/ProductSheet dialogs aren't affected.
    See landing.css for the full rationale. */
 .landing {
-  --accent: #404040;
-  --accent-pressed: #262626;
-  --accent-light: rgba(64, 64, 64, 0.08);
-  --accent-border: rgba(64, 64, 64, 0.18);
+  /* Sourced from the real app's accent (see .app-demo-frame in landing.css) so the
+     marketing site and the live register/analytics demos embedded in it share one color. */
+  --accent-rgb: 0, 122, 255;
+  --accent: #007aff;
+  --accent-pressed: #0062cc;
+  --accent-light: rgba(var(--accent-rgb), 0.08);
+  --accent-border: rgba(var(--accent-rgb), 0.2);
   --marketing-dark: #14181d;
   --bg-base: #f4f6f8;
   --bg-surface: #ffffff;
@@ -688,13 +750,13 @@ function toggleFaq(i: number) {
 }
 
 /* ── Reveal ──────────────────────────────────────────────────────────── */
-.reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.65s var(--ease-out), transform 0.65s var(--ease-out); }
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.4s var(--ease-out), transform 0.4s var(--ease-out); }
 .reveal-visible { opacity: 1; transform: none; }
-.reveal--scale { transform: scale(0.96); transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out), box-shadow 0.7s var(--ease-out); }
+.reveal--scale { transform: scale(0.97); transition: opacity 0.45s var(--ease-out), transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out); }
 .reveal--scale.reveal-visible { transform: scale(1); }
 .reveal--lift { box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
 .reveal--lift.reveal-visible { box-shadow: 0 20px 60px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.05); }
-.reveal--pop { transform: scale(0.85); transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.reveal--pop { transform: scale(0.88); transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .reveal--pop.reveal-visible { transform: scale(1); }
 
 /* ── Hero load-in (runs once on mount, never scroll-triggered) ────────── */
@@ -717,11 +779,11 @@ function toggleFaq(i: number) {
 }
 .lp-nav-logo { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 700; letter-spacing: -0.025em; }
 .lp-nav-links { display: flex; align-items: center; gap: 28px; list-style: none; margin: 0; padding: 0; }
-.lp-nav-links a { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
-.lp-nav-links a:hover { color: var(--text-primary); }
+.lp-nav-links a { font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: color 150ms; }
+.lp-nav-links a:hover { color: var(--accent); }
 .lp-nav-right { display: flex; align-items: center; gap: 12px; }
-.lp-nav-link-subtle { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
-.lp-nav-link-subtle:hover { color: var(--text-primary); }
+.lp-nav-link-subtle { font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: color 150ms; }
+.lp-nav-link-subtle:hover { color: var(--accent); }
 .lp-nav-cta {
   display: inline-flex; align-items: center; padding: 8px 18px;
   background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
@@ -745,7 +807,7 @@ function toggleFaq(i: number) {
 .lp-hero {
   position: relative; z-index: 1;
   padding: 80px 60px 0;
-  display: grid; grid-template-columns: 0.9fr 1.3fr; gap: 48px; align-items: center;
+  display: grid; grid-template-columns: 1fr 1.1fr; gap: 48px; align-items: center;
   max-width: 1280px; margin: 0 auto; min-height: calc(100vh - 56px);
 }
 .lp-hero-copy { padding-bottom: 80px; }
@@ -762,12 +824,12 @@ function toggleFaq(i: number) {
 .lp-sub strong { color: var(--text-primary); font-weight: 600; }
 .lp-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
 .lp-btn-primary {
-  display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px;
-  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700;
-  border-radius: 12px; letter-spacing: -0.01em; transition: opacity 150ms, transform 250ms, box-shadow 250ms;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.16), 0 2px 6px rgba(0,0,0,0.08);
+  display: inline-flex; align-items: center; gap: 9px; padding: 17px 32px;
+  background: var(--accent); color: #fff; font-size: 16px; font-weight: 800;
+  border-radius: 13px; letter-spacing: -0.01em; transition: transform 220ms, box-shadow 220ms, background 150ms;
+  box-shadow: 0 12px 28px rgba(var(--accent-rgb),0.32), 0 3px 8px rgba(var(--accent-rgb),0.18);
 }
-.lp-btn-primary:hover { opacity: 0.86; transform: translateY(-1px); }
+.lp-btn-primary:hover { background: var(--accent-pressed); transform: translateY(-2px); box-shadow: 0 16px 34px rgba(var(--accent-rgb),0.38), 0 4px 10px rgba(var(--accent-rgb),0.2); }
 .lp-btn-ghost {
   display: inline-flex; align-items: center; gap: 8px; padding: 14px 24px;
   background: var(--bg-surface); color: var(--text-primary); font-size: 15px; font-weight: 600;
@@ -805,6 +867,11 @@ function toggleFaq(i: number) {
   display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px;
   background: var(--bg-base); border: 1px solid var(--separator); border-radius: 980px;
   font-size: 11.5px; font-weight: 600; color: var(--text-primary);
+  transition: background 220ms ease, border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+}
+.lp-float-pill--active {
+  background: var(--accent-light); border-color: var(--accent-border);
+  transform: scale(1.045); box-shadow: 0 4px 12px rgba(var(--accent-rgb),0.16);
 }
 .lp-float-pill-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .lp-float-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: 0 11px 11px; }
@@ -840,7 +907,14 @@ function toggleFaq(i: number) {
 .lp-section, .lp-cta { scroll-margin-top: 56px; }
 .lp-section { padding: 96px 40px; }
 .lp-section--surface { background: var(--bg-surface); border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); }
+.lp-section--tint { background: linear-gradient(180deg, var(--accent-light), rgba(var(--accent-rgb),0.015)); border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); }
 .lp-container { max-width: 1080px; margin: 0 auto; }
+
+/* ── Split layout (image-left / text-right) — breaks the repeated stacked pattern ── */
+.lp-split-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+.lp-split-text .lp-eyebrow-label { margin-bottom: 18px; }
+.lp-split-text .lp-title { margin-bottom: 16px; }
+.lp-split-text .lp-subcopy { margin-bottom: 0; max-width: none; }
 .lp-eyebrow-label {
   display: inline-flex; align-items: center; padding: 5px 13px;
   background: var(--accent-light); border: 1px solid var(--accent-border);
@@ -924,6 +998,13 @@ function toggleFaq(i: number) {
 /* The actual register components define their own layout/spacing via app.css
    (.register-layout, .surface-panel, .order-panel, etc.) — nothing to add here. */
 
+/* Auto-play / live-order feel for the register demo's cart */
+@keyframes lp-line-in { from { opacity: 0; transform: translateX(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+.lp-demo-wrap :deep(.order-line) { animation: lp-line-in 0.35s var(--ease-out) both; }
+@keyframes lp-total-pulse { 0% { transform: scale(1); } 35% { transform: scale(1.14); color: var(--accent); } 100% { transform: scale(1); } }
+.lp-demo-wrap :deep(.total-amount) { display: inline-block; }
+.lp-demo-wrap :deep(.total-amount.lp-total-pulse) { animation: lp-total-pulse 0.4s ease; }
+
 /* ── Trust strip ───────────────────────────────────────────────────── */
 .lp-trust-strip { background: var(--bg-elevated); border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); padding: 32px 40px; }
 .lp-trust-inner { max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 40px; justify-content: center; flex-wrap: wrap; }
@@ -934,8 +1015,15 @@ function toggleFaq(i: number) {
 
 /* ── Bento features ────────────────────────────────────────────────── */
 .lp-bento-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.lp-bento-cell { background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow 250ms; }
-.lp-bento-cell:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04); }
+.lp-bento-cell {
+  background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 22px; padding: 28px;
+  display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  transition: box-shadow 220ms, transform 220ms, border-color 220ms;
+}
+.lp-bento-cell:hover {
+  box-shadow: 0 18px 34px rgba(var(--accent-rgb),0.12), 0 4px 10px rgba(0,0,0,0.05);
+  transform: translateY(-3px); border-color: var(--accent-border);
+}
 .lp-bento-icon {
   width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--separator); background: var(--accent-light);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -984,7 +1072,15 @@ function toggleFaq(i: number) {
 /* ── Business fit ──────────────────────────────────────────────────── */
 .lp-container--narrow { max-width: 720px; }
 .lp-fit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.lp-fit-card { background: var(--bg-base); border: 1px solid var(--separator); border-radius: 18px; padding: 24px; }
+.lp-fit-card {
+  background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 18px; padding: 24px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  transition: box-shadow 220ms, transform 220ms, border-color 220ms;
+}
+.lp-fit-card:hover {
+  box-shadow: 0 18px 34px rgba(var(--accent-rgb),0.12), 0 4px 10px rgba(0,0,0,0.05);
+  transform: translateY(-3px); border-color: var(--accent-border);
+}
 .lp-fit-card__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .lp-fit-card__title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .lp-fit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
@@ -996,9 +1092,13 @@ function toggleFaq(i: number) {
 .lp-help-card {
   display: flex; flex-direction: column; gap: 10px; padding: 24px;
   background: var(--bg-surface); border: 1px solid var(--separator); border-radius: 18px;
-  transition: box-shadow 250ms, transform 250ms;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  transition: box-shadow 220ms, transform 220ms, border-color 220ms;
 }
-.lp-help-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04); transform: translateY(-2px); }
+.lp-help-card:hover {
+  box-shadow: 0 18px 34px rgba(var(--accent-rgb),0.12), 0 4px 10px rgba(0,0,0,0.05);
+  transform: translateY(-3px); border-color: var(--accent-border);
+}
 .lp-help-card__title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .lp-help-card__desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin: 0; flex: 1; }
 .lp-help-card__cta { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
@@ -1062,6 +1162,7 @@ function toggleFaq(i: number) {
   .lp-hero-copy { padding-bottom: 0; }
   .lp-hero-visual { display: none; }
   .lp-bento-grid { grid-template-columns: repeat(2, 1fr); }
+  .lp-split-grid { grid-template-columns: 1fr; gap: 32px; }
   .lp-footer-top { grid-template-columns: 1.4fr 1fr 1fr; }
 }
 @media (max-width: 880px) {
