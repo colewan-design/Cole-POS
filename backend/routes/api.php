@@ -22,6 +22,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sync/push', [SyncController::class, 'push']);
     Route::get('/sync/pull', [SyncController::class, 'pull']);
     Route::get('/shifts/current', [ShiftController::class, 'current']);
+    Route::get('/shifts/history', [ShiftController::class, 'history']);
     Route::post('/shifts/open', [ShiftController::class, 'open']);
     Route::post('/shifts/current/movements', [ShiftController::class, 'addMovement']);
     Route::post('/shifts/current/close', [ShiftController::class, 'close']);

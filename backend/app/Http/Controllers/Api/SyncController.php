@@ -140,6 +140,7 @@ class SyncController extends Controller
                         'category' => $this->applyCategoryEvent($device, $eventData['entityId'], $eventData['payload']),
                         'product' => $this->applyProductEvent($device, $eventData['entityId'], $eventData['payload']),
                         'inventory_adjustment' => $this->applyInventoryAdjustmentEvent($device, $eventData['entityId'], $eventData['payload']),
+                        'app_event' => null,
                         default => throw new \InvalidArgumentException("Unsupported entity type [{$eventData['entityType']}]."),
                     };
                 });

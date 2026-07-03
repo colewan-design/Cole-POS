@@ -97,6 +97,8 @@ class ShiftApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('shift.payOutsCents', 5000)
             ->assertJsonPath('shift.cashSalesCents', 13440)
+            ->assertJsonPath('shift.totalSalesCents', 13440)
+            ->assertJsonPath('shift.orderCount', 1)
             ->assertJsonPath('shift.expectedCashCents', 58440);
 
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -125,5 +127,13 @@ class ShiftApiTest extends TestCase
             'amount_cents' => 5000,
             'reason' => 'Petty cash',
         ]);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/shifts/history')
+            ->assertOk()
+            ->assertJsonCount(1, 'shifts')
+            ->assertJsonPath('shifts.0.closingCashCents', 58000)
+            ->assertJsonPath('shifts.0.varianceCashCents', -440)
+            ->assertJsonPath('shifts.0.totalSalesCents', 13440);
     }
 }

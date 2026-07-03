@@ -103,7 +103,7 @@ async function handleCloseShift() {
 
   <Teleport to="body">
     <div v-if="isManageOpen" class="sheet-overlay" @click.self="isManageOpen = false">
-      <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Shift management" tabindex="-1">
+      <div class="sheet-panel shift-panel-sheet" role="dialog" aria-modal="true" aria-label="Shift management" tabindex="-1">
         <div class="sheet-grabber" />
 
         <div class="sheet-scroll">
@@ -136,6 +136,14 @@ async function handleCloseShift() {
 
           <div v-else class="shift-panel__body">
             <div class="shift-chip-row">
+              <article class="shift-chip shift-chip--highlight">
+                <span>Total sales</span>
+                <strong>{{ formatCurrency(store.activeShift.totalSalesCents) }}</strong>
+              </article>
+              <article class="shift-chip">
+                <span>Orders</span>
+                <strong>{{ store.activeShift.orderCount }}</strong>
+              </article>
               <article class="shift-chip">
                 <span>Opening float</span>
                 <strong>{{ formatCurrency(store.activeShift.openingCashCents) }}</strong>
@@ -154,56 +162,58 @@ async function handleCloseShift() {
               </article>
             </div>
 
-            <div class="shift-section">
-              <p class="section-label">Record cash movement</p>
-              <label class="settings-field">
-                <span class="settings-row__label">Amount</span>
-                <input
-                  v-model="movementAmountInput"
-                  class="sheet-input"
-                  inputmode="decimal"
-                  placeholder="0.00"
-                  type="text"
-                >
-              </label>
-              <label class="settings-field">
-                <span class="settings-row__label">Reason</span>
-                <input
-                  v-model="movementReason"
-                  class="sheet-input"
-                  maxlength="255"
-                  placeholder="Petty cash, supplies, safe drop..."
-                  type="text"
-                >
-              </label>
-              <div class="shift-actions__buttons">
-                <button class="secondary-button" :disabled="isSaving" type="button" @click="handleMovement('pay_in')">
-                  <PlusCircle :size="16" />
-                  <span>Pay in</span>
-                </button>
-                <button class="secondary-button" :disabled="isSaving" type="button" @click="handleMovement('pay_out')">
-                  <MinusCircle :size="16" />
-                  <span>Pay out</span>
+            <div class="shift-columns">
+              <div class="shift-section">
+                <p class="section-label">Record cash movement</p>
+                <label class="settings-field">
+                  <span class="settings-row__label">Amount</span>
+                  <input
+                    v-model="movementAmountInput"
+                    class="sheet-input"
+                    inputmode="decimal"
+                    placeholder="0.00"
+                    type="text"
+                  >
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Reason</span>
+                  <input
+                    v-model="movementReason"
+                    class="sheet-input"
+                    maxlength="255"
+                    placeholder="Petty cash, supplies, safe drop..."
+                    type="text"
+                  >
+                </label>
+                <div class="shift-actions__buttons">
+                  <button class="secondary-button" :disabled="isSaving" type="button" @click="handleMovement('pay_in')">
+                    <PlusCircle :size="16" />
+                    <span>Pay in</span>
+                  </button>
+                  <button class="secondary-button" :disabled="isSaving" type="button" @click="handleMovement('pay_out')">
+                    <MinusCircle :size="16" />
+                    <span>Pay out</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="shift-section shift-section--close">
+                <p class="section-label">End of day</p>
+                <label class="settings-field">
+                  <span class="settings-row__label">Counted cash</span>
+                  <input
+                    v-model="closingCashInput"
+                    class="sheet-input"
+                    inputmode="decimal"
+                    :placeholder="(store.activeShift.expectedCashCents / 100).toFixed(2)"
+                    type="text"
+                  >
+                </label>
+                <button class="outline-danger-button" :disabled="isSaving" type="button" @click="handleCloseShift">
+                  <Landmark :size="16" />
+                  <span>Close shift</span>
                 </button>
               </div>
-            </div>
-
-            <div class="shift-section shift-section--close">
-              <p class="section-label">End of day</p>
-              <label class="settings-field">
-                <span class="settings-row__label">Counted cash</span>
-                <input
-                  v-model="closingCashInput"
-                  class="sheet-input"
-                  inputmode="decimal"
-                  :placeholder="(store.activeShift.expectedCashCents / 100).toFixed(2)"
-                  type="text"
-                >
-              </label>
-              <button class="outline-danger-button" :disabled="isSaving" type="button" @click="handleCloseShift">
-                <Landmark :size="16" />
-                <span>Close shift</span>
-              </button>
             </div>
 
             <div v-if="store.activeShift.movements.length" class="shift-log">
@@ -288,6 +298,10 @@ async function handleCloseShift() {
   font-weight: 600;
 }
 
+.shift-panel-sheet {
+  max-width: 640px;
+}
+
 .shift-panel__body {
   display: grid;
   gap: var(--space-4);
@@ -295,8 +309,15 @@ async function handleCloseShift() {
 
 .shift-chip-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
+}
+
+.shift-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
 }
 
 .shift-chip {
@@ -305,6 +326,15 @@ async function handleCloseShift() {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--fill) 70%, transparent);
+}
+
+.shift-chip--highlight {
+  grid-column: 1 / -1;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.shift-chip--highlight strong {
+  color: var(--accent);
 }
 
 .shift-chip span {
@@ -383,6 +413,10 @@ async function handleCloseShift() {
   }
 
   .shift-chip-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shift-columns {
     grid-template-columns: 1fr;
   }
 

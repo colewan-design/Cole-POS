@@ -106,6 +106,8 @@ interface FsShift {
   openingCashCents: number
   closingCashCents: number | null
   cashSalesCents: number
+  totalSalesCents: number
+  orderCount: number
   payInsCents: number
   payOutsCents: number
   expectedCashCents: number
@@ -129,7 +131,7 @@ interface FsRole {
 
 interface SyncOutboxEvent {
   id: string
-  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment'
+  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment' | 'app_event'
   entityId: string
   operation: 'upsert'
   occurredAt: string
@@ -191,6 +193,9 @@ function mapFsShift(
     openingCashCents: data.openingCashCents,
     closingCashCents: data.closingCashCents ?? null,
     cashSalesCents: data.cashSalesCents,
+    // Shifts opened before totalSalesCents/orderCount existed predate these Firestore fields.
+    totalSalesCents: data.totalSalesCents ?? data.cashSalesCents ?? 0,
+    orderCount: data.orderCount ?? 0,
     payInsCents: data.payInsCents,
     payOutsCents: data.payOutsCents,
     expectedCashCents: data.expectedCashCents,
@@ -304,7 +309,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
     const productSnaps = await Promise.all(productRefs.map((ref) => tx.get(ref)))
 
     let openShiftDocRef = null as ReturnType<typeof doc> | null
-    if (paymentMethod === 'cash' && openShiftRef) {
+    if (openShiftRef) {
       const shiftSnap = await tx.get(openShiftRef)
       if (shiftSnap.exists() && !(shiftSnap.data() as FsShift).closedAt) {
         openShiftDocRef = openShiftRef
@@ -357,8 +362,11 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
 
     if (openShiftDocRef) {
       tx.update(openShiftDocRef, {
-        cashSalesCents: increment(order.totalCents),
-        expectedCashCents: increment(order.totalCents),
+        ...(paymentMethod === 'cash'
+          ? { cashSalesCents: increment(order.totalCents), expectedCashCents: increment(order.totalCents) }
+          : {}),
+        totalSalesCents: increment(order.totalCents),
+        orderCount: increment(1),
       })
     }
   }
@@ -668,6 +676,9 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
               entityType: event.entityType,
               entityId: event.entityId,
               operation: event.operation,
+              occurredAt: event.occurredAt,
+              payload: event.payload,
+              deviceId: session.deviceId,
               receivedAt: serverTimestamp(),
               appliedAt: serverTimestamp(),
             })
@@ -746,6 +757,22 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       return mapFsShift(shiftDoc, movementsSnap.docs)
     },
 
+    async getShiftHistory(storeId: string): Promise<ShiftSummary[]> {
+      const shiftsRef = collection(db, 'organizations', config.organizationSlug, 'stores', storeId, 'shifts')
+      const snap = await getDocs(
+        query(shiftsRef, where('closedAt', '!=', null), orderBy('closedAt', 'desc'), limit(50)),
+      )
+
+      return Promise.all(
+        snap.docs.map(async (shiftDoc) => {
+          const movementsSnap = await getDocs(
+            query(collection(shiftDoc.ref, 'cashMovements'), orderBy('createdAt', 'desc')),
+          )
+          return mapFsShift(shiftDoc, movementsSnap.docs)
+        }),
+      )
+    },
+
     async openShift(input: {
       openingCashCents: number
       userId?: string | null
@@ -761,6 +788,8 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
         openingCashCents: input.openingCashCents,
         closingCashCents: null,
         cashSalesCents: 0,
+        totalSalesCents: 0,
+        orderCount: 0,
         payInsCents: 0,
         payOutsCents: 0,
         expectedCashCents: input.openingCashCents,
@@ -776,6 +805,8 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
         openingCashCents: input.openingCashCents,
         closingCashCents: null,
         cashSalesCents: 0,
+        totalSalesCents: 0,
+        orderCount: 0,
         payInsCents: 0,
         payOutsCents: 0,
         expectedCashCents: input.openingCashCents,

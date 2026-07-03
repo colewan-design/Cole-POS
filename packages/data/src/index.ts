@@ -3,6 +3,7 @@ import {
   defaultSettings,
   demoCategories,
   demoProducts,
+  guestCustomerName,
   slugTicket,
   type AppEvent,
   type AppEventType,
@@ -12,9 +13,11 @@ import {
   type CashMovementType,
   type CatalogSnapshot,
   type Category,
+  type CreateCustomerInput,
   type CreateCategoryInput,
   type CreateOrderInput,
   type CreateProductInput,
+  type Customer,
   type OrderSummary,
   type Product,
   type RoleDefinition,
@@ -38,8 +41,13 @@ export interface DataStore {
 export interface PosRepository {
   loadCatalog(): Promise<CatalogSnapshot>
   loadOrders(): Promise<OrderSummary[]>
+  loadCustomers(): Promise<Customer[]>
   loadActiveShift(): Promise<ShiftSummary | null>
+  loadShiftHistory(): Promise<ShiftSummary[]>
   saveOrder(input: CreateOrderInput): Promise<OrderSummary>
+  saveCustomer(input: CreateCustomerInput): Promise<Customer>
+  updateCustomer(customer: Customer): Promise<Customer>
+  deleteCustomer(id: string): Promise<void>
   openShift(input: {
     openingCashCents: number
     userId?: string | null
@@ -115,7 +123,7 @@ interface SyncSession {
 
 interface SyncOutboxEvent {
   id: string
-  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment'
+  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment' | 'app_event'
   entityId: string
   operation: 'upsert'
   occurredAt: string
@@ -162,6 +170,8 @@ interface BackendShiftSummary {
   openingCashCents: number
   closingCashCents?: number | null
   cashSalesCents: number
+  totalSalesCents: number
+  orderCount: number
   payInsCents: number
   payOutsCents: number
   expectedCashCents: number
@@ -178,10 +188,12 @@ const storageKeys = {
   deviceId: 'pos.device-id',
   products: 'pos.products',
   categories: 'pos.categories',
+  customers: 'pos.customers',
   users: 'pos.users',
   roles: 'pos.roles',
   session: 'pos.session',
   activeShift: 'pos.shift.active',
+  shiftHistory: 'pos.shift.history',
   syncSession: 'pos.sync.session',
   syncCursor: 'pos.sync.cursor',
   syncOutbox: 'pos.sync.outbox',
@@ -462,6 +474,8 @@ function mapBackendShift(shift: BackendShiftSummary): ShiftSummary {
     openingCashCents: shift.openingCashCents,
     closingCashCents: shift.closingCashCents ?? null,
     cashSalesCents: shift.cashSalesCents,
+    totalSalesCents: shift.totalSalesCents,
+    orderCount: shift.orderCount,
     payInsCents: shift.payInsCents,
     payOutsCents: shift.payOutsCents,
     expectedCashCents: shift.expectedCashCents,
@@ -579,7 +593,27 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
   async function appendOutboxEvent(event: SyncOutboxEvent) {
     const events = await readOutbox()
+    if (events.some((entry) => entry.id === event.id)) {
+      return
+    }
     await writeOutbox([...events, event])
+  }
+
+  async function markAppEventsSent(eventIds: Set<string>) {
+    if (eventIds.size === 0) {
+      return
+    }
+
+    const sentAt = new Date().toISOString()
+    const events = await store.read<AppEvent[]>(storageKeys.appEvents, [])
+    await store.write(
+      storageKeys.appEvents,
+      events.map((event) => (
+        eventIds.has(event.id) && !event.sentAt
+          ? { ...event, sentAt }
+          : event
+      )),
+    )
   }
 
   async function readSyncCursor() {
@@ -591,7 +625,17 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function readActiveShift() {
-    return store.read<ShiftSummary | null>(storageKeys.activeShift, null)
+    const shift = await store.read<ShiftSummary | null>(storageKeys.activeShift, null)
+    if (!shift) {
+      return shift
+    }
+    // Shifts opened before totalSalesCents/orderCount existed are missing these fields in
+    // storage — back-fill totalSalesCents from the cash figure we do have, rather than showing NaN.
+    return {
+      ...shift,
+      totalSalesCents: shift.totalSalesCents ?? shift.cashSalesCents ?? 0,
+      orderCount: shift.orderCount ?? 0,
+    }
   }
 
   async function writeActiveShift(shift: ShiftSummary | null) {
@@ -813,30 +857,31 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     await writeSyncCursor(response.cursor)
   }
 
-  async function flushOutbox() {
+  async function flushOutbox(): Promise<Set<string>> {
     if (!await isOnlineSyncEnabled()) {
-      return
+      return new Set()
     }
 
     const events = await readOutbox()
     if (events.length === 0) {
-      return
+      return new Set()
     }
 
     if (firebaseSync) {
       const session = await getFirebaseSession()
-      if (!session) return
+      if (!session) return new Set()
       const appliedIds = await firebaseSync.pushEvents(events, session)
       if (appliedIds.size > 0) {
         await writeOutbox(events.filter((event) => !appliedIds.has(event.id)))
+        await markAppEventsSent(appliedIds)
       }
       await pullCatalogChanges()
-      return
+      return appliedIds
     }
 
     const session = await ensureRemoteSession()
     if (!session) {
-      return
+      return new Set()
     }
 
     const response = await backendFetch<{ results: Array<{ eventId: string; status: string }> }>('/api/sync/push', {
@@ -863,9 +908,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     if (successfulIds.size > 0) {
       await writeOutbox(events.filter((event) => !successfulIds.has(event.id)))
+      await markAppEventsSent(successfulIds)
     }
 
     await pullCatalogChanges()
+    return successfulIds
   }
 
   async function maybeSyncCatalog() {
@@ -970,6 +1017,32 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     })
   }
 
+  async function enqueueAppTelemetryEvent(event: AppEvent) {
+    await appendOutboxEvent({
+      id: event.id,
+      entityType: 'app_event',
+      entityId: event.id,
+      operation: 'upsert',
+      occurredAt: event.createdAt,
+      payload: {
+        eventType: event.eventType,
+        payload: event.payload,
+        deviceId: event.deviceId,
+        appVersion: event.appVersion,
+        createdAt: event.createdAt,
+      },
+    })
+  }
+
+  async function enqueuePendingAppTelemetryEvents() {
+    const events = await store.read<AppEvent[]>(storageKeys.appEvents, [])
+    for (const event of events) {
+      if (!event.sentAt) {
+        await enqueueAppTelemetryEvent(event)
+      }
+    }
+  }
+
   async function tryLoadRemoteUsers() {
     if (!await isOnlineSyncEnabled()) {
       return null
@@ -1006,6 +1079,31 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     return response.roles
   }
 
+  function normalizeCustomer(input: Partial<Customer> & Pick<Customer, 'id' | 'name'>): Customer {
+    const timestamp = new Date().toISOString()
+    return {
+      id: input.id,
+      name: input.name.trim(),
+      phone: input.phone?.trim() || undefined,
+      email: input.email?.trim() || undefined,
+      notes: input.notes?.trim() || undefined,
+      createdAt: input.createdAt ?? timestamp,
+      updatedAt: input.updatedAt ?? timestamp,
+    }
+  }
+
+  function normalizeOrder(order: OrderSummary): OrderSummary {
+    return {
+      ...order,
+      businessMode: order.businessMode || 'coffee-shop',
+      customerId: 'customerId' in order ? order.customerId ?? null : null,
+      customerName:
+        'customerName' in order && typeof order.customerName === 'string' && order.customerName.trim()
+          ? order.customerName.trim()
+          : guestCustomerName,
+    }
+  }
+
   return {
     async loadCatalog() {
       try {
@@ -1029,17 +1127,16 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
       return orders
-        .map((order) => {
-          if ('businessMode' in order && order.businessMode) {
-            return order
-          }
-
-          return {
-            ...order,
-            businessMode: 'coffee-shop' as const,
-          }
-        })
+        .map((order) => normalizeOrder(order))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    },
+
+    async loadCustomers() {
+      const customers = await store.read<Customer[]>(storageKeys.customers, [])
+      return customers
+        .map((customer) => normalizeCustomer(customer))
+        .filter((customer) => customer.name.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
     },
 
     async loadActiveShift() {
@@ -1054,6 +1151,30 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return readActiveShift()
     },
 
+    async loadShiftHistory() {
+      if (await isOnlineSyncEnabled()) {
+        try {
+          if (firebaseSync) {
+            const session = await getFirebaseSession()
+            if (session) {
+              const shifts = await firebaseSync.getShiftHistory(session.storeId)
+              await store.write(storageKeys.shiftHistory, shifts)
+              return shifts
+            }
+          } else {
+            const response = await backendFetch<{ shifts: BackendShiftSummary[] }>('/api/shifts/history')
+            const shifts = response.shifts.map(mapBackendShift)
+            await store.write(storageKeys.shiftHistory, shifts)
+            return shifts
+          }
+        } catch {
+          // Fall back to the cached history if the backend/Firebase is unavailable.
+        }
+      }
+
+      return store.read<ShiftSummary[]>(storageKeys.shiftHistory, [])
+    },
+
     async saveOrder(input) {
       const subtotalCents = input.items.reduce((sum, item) => sum + item.lineTotalCents, 0)
       const taxCents = Math.round(subtotalCents * 0.12)
@@ -1064,6 +1185,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         id: orderId,
         ticketNumber: slugTicket(ticketSeed),
         businessMode: input.businessMode,
+        customerId: input.customerId ?? null,
+        customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
         paymentMethod: input.paymentMethod,
         subtotalCents,
@@ -1120,21 +1243,74 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         // Order stays queued until the next sync attempt.
       }
 
-      if (order.paymentMethod === 'cash') {
-        await updateCachedShift((current) => {
-          if (!current || current.closedAt) {
-            return current
-          }
+      await updateCachedShift((current) => {
+        if (!current || current.closedAt) {
+          return current
+        }
 
-          return {
-            ...current,
-            cashSalesCents: current.cashSalesCents + order.totalCents,
-            expectedCashCents: current.expectedCashCents + order.totalCents,
-          }
-        })
-      }
+        const isCash = order.paymentMethod === 'cash'
+        return {
+          ...current,
+          cashSalesCents: current.cashSalesCents + (isCash ? order.totalCents : 0),
+          expectedCashCents: current.expectedCashCents + (isCash ? order.totalCents : 0),
+          totalSalesCents: current.totalSalesCents + order.totalCents,
+          orderCount: current.orderCount + 1,
+        }
+      })
 
       return order
+    },
+
+    async saveCustomer(input) {
+      const timestamp = new Date().toISOString()
+      const customer = normalizeCustomer({
+        id: crypto.randomUUID(),
+        name: input.name,
+        phone: input.phone,
+        email: input.email,
+        notes: input.notes,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+
+      const customers = await store.read<Customer[]>(storageKeys.customers, [])
+      await store.write(storageKeys.customers, [customer, ...customers])
+      return customer
+    },
+
+    async updateCustomer(customer) {
+      const customers = await store.read<Customer[]>(storageKeys.customers, [])
+      const existing = customers.find((entry) => entry.id === customer.id)
+      const nextCustomer = normalizeCustomer({
+        ...customer,
+        createdAt: existing?.createdAt ?? customer.createdAt,
+        updatedAt: new Date().toISOString(),
+      })
+
+      await store.write(
+        storageKeys.customers,
+        customers.map((entry) => (entry.id === nextCustomer.id ? nextCustomer : entry)),
+      )
+
+      const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
+      await store.write(
+        storageKeys.orders,
+        orders.map((order) =>
+          order.customerId === nextCustomer.id
+            ? { ...normalizeOrder(order), customerName: nextCustomer.name }
+            : normalizeOrder(order),
+        ),
+      )
+
+      return nextCustomer
+    },
+
+    async deleteCustomer(id) {
+      const customers = await store.read<Customer[]>(storageKeys.customers, [])
+      await store.write(
+        storageKeys.customers,
+        customers.filter((customer) => customer.id !== id),
+      )
     },
 
     async openShift(input) {
@@ -1172,6 +1348,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         openingCashCents: input.openingCashCents,
         closingCashCents: null,
         cashSalesCents: 0,
+        totalSalesCents: 0,
+        orderCount: 0,
         payInsCents: 0,
         payOutsCents: 0,
         expectedCashCents: input.openingCashCents,
@@ -1294,6 +1472,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         closedAt: new Date().toISOString(),
       }
 
+      const history = await store.read<ShiftSummary[]>(storageKeys.shiftHistory, [])
+      await store.write(storageKeys.shiftHistory, [closedShift, ...history].slice(0, 50))
+
       await writeActiveShift(null)
       return closedShift
     },
@@ -1343,6 +1524,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
           if (!firebaseSync) {
             await ensureRemoteSession()
           }
+          await enqueuePendingAppTelemetryEvents()
           await syncCatalogFromBootstrap()
           await flushOutbox()
         } catch {
@@ -1614,6 +1796,19 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       const events = await store.read<AppEvent[]>(storageKeys.appEvents, [])
       await store.write(storageKeys.appEvents, [event, ...events])
+
+      if (await isOnlineSyncEnabled()) {
+        try {
+          await enqueueAppTelemetryEvent(event)
+          const appliedIds = await flushOutbox()
+          if (appliedIds.has(event.id)) {
+            return { ...event, sentAt: new Date().toISOString() }
+          }
+        } catch {
+          // Telemetry remains local and queued for the next sync attempt.
+        }
+      }
+
       return event
     },
 

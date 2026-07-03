@@ -4,6 +4,7 @@ import {
   defaultSettings,
   demoCategories,
   demoProducts,
+  guestCustomerName,
   slugTicket,
   type AppEvent,
   type AuthSession,
@@ -12,8 +13,10 @@ import {
   type CashMovementSummary,
   type Category,
   type CreateCategoryInput,
+  type CreateCustomerInput,
   type CreateOrderInput,
   type CreateProductInput,
+  type Customer,
   type OrderItemSummary,
   type OrderSummary,
   type PaymentMethod,
@@ -56,7 +59,22 @@ function weightedPaymentMethod(): PaymentMethod {
   return 'ewallet'
 }
 
-function buildDemoOrder(createdAt: Date): OrderSummary {
+function seedDemoCustomers(): Customer[] {
+  const timestamp = new Date().toISOString()
+  return [
+    { name: 'Maria Santos', phone: '09171234567', email: 'maria@demo.cole', notes: 'Prefers iced drinks.' },
+    { name: 'Paolo Reyes', phone: '09179876543', email: 'paolo@demo.cole', notes: 'Usually orders for pickup.' },
+    { name: 'Anne Lim', phone: '09175554444', email: 'anne@demo.cole', notes: 'Loyal weekend shopper.' },
+    { name: 'Miguel Garcia', phone: '09176667777', email: 'miguel@demo.cole', notes: 'Asks for printed receipts.' },
+  ].map((customer) => ({
+    id: crypto.randomUUID(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...customer,
+  }))
+}
+
+function buildDemoOrder(createdAt: Date, customers: Customer[]): OrderSummary {
   const businessMode = weightedBusinessMode()
   const pool = demoProducts.filter((p) => p.businessModes.includes(businessMode))
   const itemCount = randomInt(1, 4)
@@ -85,11 +103,14 @@ function buildDemoOrder(createdAt: Date): OrderSummary {
   const totalCents = subtotalCents + taxCents
   const paymentMethod = weightedPaymentMethod()
   const tenderedCents = paymentMethod === 'cash' ? totalCents + randomItem([0, 0, 0, 2000, 5000]) : totalCents
+  const customer = Math.random() < 0.35 ? randomItem(customers) : null
 
   return {
     id: crypto.randomUUID(),
     ticketNumber: slugTicket(crypto.randomUUID()),
     businessMode,
+    customerId: customer?.id ?? null,
+    customerName: customer?.name ?? guestCustomerName,
     orderType: Math.random() < 0.7 ? 'takeaway' : 'dine_in',
     paymentMethod,
     subtotalCents,
@@ -103,7 +124,7 @@ function buildDemoOrder(createdAt: Date): OrderSummary {
 }
 
 /** Seeds ~30 days of orders, busier on weekends and in the most recent week, so Analytics has a realistic story across every range filter. */
-function seedDemoOrders(): OrderSummary[] {
+function seedDemoOrders(customers: Customer[]): OrderSummary[] {
   const orders: OrderSummary[] = []
   const now = new Date()
 
@@ -118,7 +139,7 @@ function seedDemoOrders(): OrderSummary[] {
     for (let i = 0; i < count; i++) {
       const createdAt = new Date(day)
       createdAt.setHours(randomInt(7, 20), randomInt(0, 59), randomInt(0, 59), 0)
-      orders.push(buildDemoOrder(createdAt))
+      orders.push(buildDemoOrder(createdAt, customers))
     }
   }
 
@@ -133,13 +154,15 @@ function generateSku(name: string): string {
 export function createDemoPosRepository(): PosRepository {
   let products: Product[] = [...demoProducts]
   let categories: Category[] = [...demoCategories]
-  let orders: OrderSummary[] = seedDemoOrders()
+  let customers: Customer[] = seedDemoCustomers()
+  let orders: OrderSummary[] = seedDemoOrders(customers)
   let settings: AppSettings = { ...defaultSettings, businessName: 'Cole POS Demo' }
   let appEvents: AppEvent[] = []
   let users: UserAccount[] = []
   let roles: RoleDefinition[] = [...defaultRoles]
   let session: AuthSession | null = null
   let activeShift: ShiftSummary | null = null
+  let shiftHistory: ShiftSummary[] = []
 
   return {
     async loadCatalog() {
@@ -150,8 +173,16 @@ export function createDemoPosRepository(): PosRepository {
       return orders
     },
 
+    async loadCustomers() {
+      return customers
+    },
+
     async loadActiveShift() {
       return activeShift
+    },
+
+    async loadShiftHistory() {
+      return shiftHistory
     },
 
     async saveOrder(input: CreateOrderInput) {
@@ -162,6 +193,8 @@ export function createDemoPosRepository(): PosRepository {
         id: crypto.randomUUID(),
         ticketNumber: slugTicket(crypto.randomUUID()),
         businessMode: input.businessMode,
+        customerId: input.customerId ?? null,
+        customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
         paymentMethod: input.paymentMethod,
         subtotalCents,
@@ -174,15 +207,55 @@ export function createDemoPosRepository(): PosRepository {
       }
       orders = [order, ...orders]
 
-      if (activeShift && order.paymentMethod === 'cash') {
+      if (activeShift && !activeShift.closedAt) {
+        const isCash = order.paymentMethod === 'cash'
         activeShift = {
           ...activeShift,
-          cashSalesCents: activeShift.cashSalesCents + order.totalCents,
-          expectedCashCents: activeShift.expectedCashCents + order.totalCents,
+          cashSalesCents: activeShift.cashSalesCents + (isCash ? order.totalCents : 0),
+          expectedCashCents: activeShift.expectedCashCents + (isCash ? order.totalCents : 0),
+          totalSalesCents: activeShift.totalSalesCents + order.totalCents,
+          orderCount: activeShift.orderCount + 1,
         }
       }
 
       return order
+    },
+
+    async saveCustomer(input: CreateCustomerInput) {
+      const timestamp = new Date().toISOString()
+      const customer: Customer = {
+        id: crypto.randomUUID(),
+        name: input.name.trim(),
+        phone: input.phone?.trim() || undefined,
+        email: input.email?.trim() || undefined,
+        notes: input.notes?.trim() || undefined,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      customers = [customer, ...customers]
+      return customer
+    },
+
+    async updateCustomer(customer: Customer) {
+      const nextCustomer: Customer = {
+        ...customer,
+        name: customer.name.trim(),
+        phone: customer.phone?.trim() || undefined,
+        email: customer.email?.trim() || undefined,
+        notes: customer.notes?.trim() || undefined,
+        updatedAt: new Date().toISOString(),
+      }
+      customers = customers.map((entry) => (entry.id === nextCustomer.id ? nextCustomer : entry))
+      orders = orders.map((order) =>
+        order.customerId === nextCustomer.id
+          ? { ...order, customerName: nextCustomer.name }
+          : order,
+      )
+      return nextCustomer
+    },
+
+    async deleteCustomer(id: string) {
+      customers = customers.filter((customer) => customer.id !== id)
     },
 
     async openShift(input) {
@@ -193,6 +266,8 @@ export function createDemoPosRepository(): PosRepository {
         openingCashCents: input.openingCashCents,
         closingCashCents: null,
         cashSalesCents: 0,
+        totalSalesCents: 0,
+        orderCount: 0,
         payInsCents: 0,
         payOutsCents: 0,
         expectedCashCents: input.openingCashCents,
@@ -246,6 +321,7 @@ export function createDemoPosRepository(): PosRepository {
         closedAt: new Date().toISOString(),
       }
 
+      shiftHistory = [closedShift, ...shiftHistory]
       activeShift = null
       return closedShift
     },

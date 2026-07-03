@@ -6,13 +6,13 @@ import OrdersPage from '@pos/core/pages/OrdersPage.vue'
 import ProductsPage from '@pos/core/pages/ProductsPage.vue'
 import SalesPage from '@pos/core/pages/SalesPage.vue'
 import SettingsPage from '@pos/core/pages/SettingsPage.vue'
-import WorkspacePage from '@pos/core/pages/WorkspacePage.vue'
 import InventoryPage from '@pos/core/pages/InventoryPage.vue'
 import DiagnosticsPage from '@pos/core/pages/DiagnosticsPage.vue'
 import EmployeesPage from '@pos/core/pages/EmployeesPage.vue'
 import CustomersPage from '@pos/core/pages/CustomersPage.vue'
 import SuppliersPage from '@pos/core/pages/SuppliersPage.vue'
 import ReportsPage from '@pos/core/pages/ReportsPage.vue'
+import IntegrationsPage from '@pos/core/pages/IntegrationsPage.vue'
 import type { AppPageKey } from '@pos/shared/index'
 
 declare module 'vue-router' {
@@ -35,9 +35,9 @@ export function createPosRouter() {
       { path: '/customers',   name: 'customers',   component: CustomersPage, meta: { pageKey: 'customers' } },
       { path: '/suppliers',   name: 'suppliers',   component: SuppliersPage, meta: { pageKey: 'suppliers' } },
       { path: '/employees',   name: 'employees',   component: EmployeesPage, meta: { pageKey: 'employees' } },
-      { path: '/inventory',   name: 'inventory',   component: InventoryPage, meta: { pageKey: 'inventory' } },
+      { path: '/inventory',   name: 'inventory',   component: InventoryPage, meta: { pageKey: 'inventory' }, alias: '/inventories' },
       { path: '/reports',     name: 'reports',     component: ReportsPage, meta: { pageKey: 'reports' } },
-      { path: '/integrations',name: 'integrations',component: WorkspacePage, meta: { pageKey: 'integrations' }, props: { title: 'Integrations', description: 'Connect third-party services, payment providers, and delivery channels.' } },
+      { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations' } },
       { path: '/register',    name: 'register',    component: RegisterPage, meta: { pageKey: 'register' } },
       { path: '/settings',    name: 'settings',    component: SettingsPage, meta: { pageKey: 'settings' } },
       { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage, meta: { pageKey: 'diagnostics' } },

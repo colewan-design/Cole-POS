@@ -13,6 +13,7 @@ onMounted(() => {
   if (!store.isReady) {
     void store.initialize()
   }
+  void store.refreshShiftHistory()
 })
 
 const range = ref<Range>('today')
@@ -114,6 +115,16 @@ const topLines = computed(() => {
     .slice(0, 8)
 })
 
+function varianceClass(varianceCents?: number | null): string {
+  if (!varianceCents) return 'reports-variance--even'
+  return varianceCents < 0 ? 'reports-variance--short' : 'reports-variance--over'
+}
+
+function varianceLabel(varianceCents?: number | null): string {
+  if (!varianceCents) return 'Exact'
+  return varianceCents < 0 ? `${formatCurrency(Math.abs(varianceCents))} short` : `${formatCurrency(varianceCents)} over`
+}
+
 const shiftReport = computed(() => {
   const shift = store.activeShift
   if (!shift) {
@@ -124,6 +135,8 @@ const shiftReport = computed(() => {
     openedAt: shift.openedAt,
     openingCashCents: shift.openingCashCents,
     cashSalesCents: shift.cashSalesCents,
+    totalSalesCents: shift.totalSalesCents,
+    orderCount: shift.orderCount,
     payInsCents: shift.payInsCents,
     payOutsCents: shift.payOutsCents,
     expectedCashCents: shift.expectedCashCents,
@@ -265,6 +278,14 @@ const rangeCaption = computed(() => {
               <strong>{{ formatCompactDate(shiftReport.openedAt) }}</strong>
             </div>
             <div class="reports-shift__stat">
+              <span>Total sales</span>
+              <strong>{{ formatCurrency(shiftReport.totalSalesCents) }}</strong>
+            </div>
+            <div class="reports-shift__stat">
+              <span>Orders</span>
+              <strong>{{ shiftReport.orderCount }}</strong>
+            </div>
+            <div class="reports-shift__stat">
               <span>Opening float</span>
               <strong>{{ formatCurrency(shiftReport.openingCashCents) }}</strong>
             </div>
@@ -285,6 +306,24 @@ const rangeCaption = computed(() => {
                 <p>{{ movement.reason || 'No reason provided' }}</p>
               </div>
               <strong>{{ formatCurrency(movement.amountCents) }}</strong>
+            </div>
+          </div>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Shift History" summary="Past closed shifts, with the counted-cash variance for each.">
+        <div v-if="store.shiftHistory.length === 0" class="empty-state">
+          No shifts have been closed yet.
+        </div>
+        <div v-else class="reports-shift-history">
+          <div v-for="shift in store.shiftHistory" :key="shift.id" class="reports-shift-history__row">
+            <div>
+              <strong>{{ formatCompactDate(shift.openedAt) }} – {{ shift.closedAt ? formatCompactDate(shift.closedAt) : 'Open' }}</strong>
+              <p>{{ shift.orderCount }} orders · {{ formatCurrency(shift.totalSalesCents) }} total sales</p>
+            </div>
+            <div class="reports-shift-history__cash">
+              <span>Expected {{ formatCurrency(shift.expectedCashCents) }} · Counted {{ formatCurrency(shift.closingCashCents ?? 0) }}</span>
+              <strong :class="varianceClass(shift.varianceCashCents)">{{ varianceLabel(shift.varianceCashCents) }}</strong>
             </div>
           </div>
         </div>
@@ -463,6 +502,55 @@ const rangeCaption = computed(() => {
   background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
 }
 
+.reports-shift-history {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.reports-shift-history__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--separator);
+}
+
+.reports-shift-history__row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.reports-shift-history__row p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.reports-shift-history__cash {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.reports-shift-history__cash span {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.reports-variance--short {
+  color: var(--danger);
+}
+
+.reports-variance--over {
+  color: var(--warning);
+}
+
+.reports-variance--even {
+  color: var(--success);
+}
+
 .reports-shift__stat span {
   color: var(--text-secondary);
   font: var(--type-caption);
@@ -507,13 +595,19 @@ const rangeCaption = computed(() => {
   .reports-payment-row,
   .reports-order-row,
   .reports-line-row,
-  .reports-shift__movement {
+  .reports-shift__movement,
+  .reports-shift-history__row {
     flex-direction: column;
     align-items: stretch;
   }
 
   .reports-shift__stats {
     grid-template-columns: 1fr;
+  }
+
+  .reports-shift-history__cash {
+    justify-items: start;
+    text-align: left;
   }
 }
 </style>

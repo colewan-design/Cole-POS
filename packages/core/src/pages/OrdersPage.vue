@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import { Printer } from '@lucide/vue'
-import { businessModeLabel, formatCompactDate, formatCurrency, type OrderSummary } from '@pos/shared/index'
+import { computed, onMounted, ref, watch } from 'vue'
+import { ArrowRight, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
+import ChartCard from '@pos/core/components/ChartCard.vue'
+import MetricCard from '@pos/core/components/MetricCard.vue'
+import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { printReceipt } from '@pos/core/utils/receipt'
+import {
+  businessModeLabel,
+  formatCompactDate,
+  formatCurrency,
+  type BusinessMode,
+  type OrderSummary,
+  type PaymentMethod,
+} from '@pos/shared/index'
 
 const store = usePosStore()
 
@@ -13,6 +23,78 @@ onMounted(() => {
   }
 })
 
+const range = ref<Range>('week')
+const searchQuery = ref('')
+const paymentFilter = ref<'all' | PaymentMethod>('all')
+const modeFilter = ref<'all' | BusinessMode>('all')
+const selectedOrderId = ref<string | null>(null)
+const now = new Date()
+
+interface Bounds {
+  start: Date
+  end: Date
+}
+
+function startOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate())
+}
+
+function getMonday(value: Date) {
+  const day = value.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  return new Date(startOfDay(value).getTime() + diff * 86400000)
+}
+
+function getBounds(value: Range): Bounds {
+  const today = startOfDay(now)
+
+  switch (value) {
+    case 'today':
+      return { start: today, end: new Date(today.getTime() + 86400000) }
+    case 'week': {
+      const start = getMonday(now)
+      return { start, end: new Date(start.getTime() + 7 * 86400000) }
+    }
+    case 'month':
+      return {
+        start: new Date(today.getFullYear(), today.getMonth(), 1),
+        end: new Date(today.getFullYear(), today.getMonth() + 1, 1),
+      }
+    case 'all':
+      return { start: new Date(0), end: new Date(8640000000000000) }
+  }
+}
+
+function inBounds(order: OrderSummary, bounds: Bounds) {
+  const createdAt = new Date(order.createdAt)
+  return createdAt >= bounds.start && createdAt < bounds.end
+}
+
+function paymentLabel(method: PaymentMethod) {
+  switch (method) {
+    case 'cash':
+      return 'Cash'
+    case 'card':
+      return 'Card'
+    case 'ewallet':
+      return 'E-wallet'
+  }
+}
+
+function orderTypeLabel(type: OrderSummary['orderType']) {
+  return type === 'dine_in' ? 'Dine in' : 'Takeaway'
+}
+
+function formatFullDate(value: string) {
+  return new Intl.DateTimeFormat('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 function handlePrintReceipt(order: OrderSummary) {
   printReceipt(order, {
     name: store.settings.businessName,
@@ -20,66 +102,678 @@ function handlePrintReceipt(order: OrderSummary) {
   })
 }
 
-const recentOrders = computed(() => store.orders.slice(0, 20))
-const revenueCents = computed(() => store.orders.reduce((sum, order) => sum + order.totalCents, 0))
-const averageTicketCents = computed(() =>
-  store.orders.length > 0 ? Math.round(revenueCents.value / store.orders.length) : 0,
+const bounds = computed(() => getBounds(range.value))
+const rangeOrders = computed(() => store.orders.filter((order) => inBounds(order, bounds.value)))
+
+const filteredOrders = computed(() => {
+  const needle = searchQuery.value.trim().toLowerCase()
+
+  return rangeOrders.value
+    .filter((order) => {
+      if (paymentFilter.value !== 'all' && order.paymentMethod !== paymentFilter.value) {
+        return false
+      }
+
+      if (modeFilter.value !== 'all' && order.businessMode !== modeFilter.value) {
+        return false
+      }
+
+      if (!needle) {
+        return true
+      }
+
+      return (
+        order.ticketNumber.toLowerCase().includes(needle)
+        || order.customerName.toLowerCase().includes(needle)
+        || order.paymentMethod.toLowerCase().includes(needle)
+        || order.items.some((item) => item.name.toLowerCase().includes(needle))
+      )
+    })
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+})
+
+const selectedOrder = computed(() =>
+  filteredOrders.value.find((order) => order.id === selectedOrderId.value) ?? filteredOrders.value[0] ?? null,
 )
-const cashOrders = computed(() => store.orders.filter((order) => order.paymentMethod === 'cash').length)
-const digitalOrders = computed(() => store.orders.filter((order) => order.paymentMethod !== 'cash').length)
+
+watch(
+  filteredOrders,
+  (orders) => {
+    if (!orders.length) {
+      selectedOrderId.value = null
+      return
+    }
+
+    if (!orders.some((order) => order.id === selectedOrderId.value)) {
+      selectedOrderId.value = orders[0].id
+    }
+  },
+  { immediate: true },
+)
+
+const grossSales = computed(() => filteredOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
+const taxCollected = computed(() => filteredOrders.value.reduce((sum, order) => sum + order.taxCents, 0))
+const averageTicket = computed(() =>
+  filteredOrders.value.length > 0 ? Math.round(grossSales.value / filteredOrders.value.length) : 0,
+)
+const itemCount = computed(() =>
+  filteredOrders.value.reduce(
+    (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+    0,
+  ),
+)
+
+const paymentTotals = computed(() => {
+  const total = grossSales.value || 1
+  const methods: PaymentMethod[] = ['cash', 'card', 'ewallet']
+
+  return methods.map((method) => {
+    const orders = filteredOrders.value.filter((order) => order.paymentMethod === method)
+    const amount = orders.reduce((sum, order) => sum + order.totalCents, 0)
+
+    return {
+      method,
+      label: paymentLabel(method),
+      count: orders.length,
+      amount,
+      percentage: Math.round((amount / total) * 100),
+    }
+  })
+})
+
+const modeTotals = computed(() => {
+  const modes: BusinessMode[] = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon']
+
+  return modes
+    .map((mode) => {
+      const orders = filteredOrders.value.filter((order) => order.businessMode === mode)
+      return {
+        mode,
+        label: businessModeLabel(mode),
+        count: orders.length,
+        amount: orders.reduce((sum, order) => sum + order.totalCents, 0),
+      }
+    })
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.amount - a.amount)
+})
+
+const rangeCaption = computed(() => {
+  if (range.value === 'all') {
+    return 'All completed orders'
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (range.value === 'today') {
+    return formatter.format(now)
+  }
+
+  const endForCaption = new Date(bounds.value.end.getTime() - 86400000)
+  return `${formatter.format(bounds.value.start)} - ${formatter.format(endForCaption)}`
+})
 </script>
 
 <template>
-  <section class="surface-panel page-stack">
-    <div class="panel-header">
+  <div class="orders-page">
+    <section class="orders-header">
       <div>
-        <p class="eyebrow">Sales history</p>
-        <h1 class="panel-title">Recent orders</h1>
+        <h1 class="orders-title">Orders</h1>
+        <p class="orders-copy">Review tickets, inspect line items, and reprint receipts from one searchable history.</p>
       </div>
-      <div class="order-badge">{{ store.orders.length }} orders</div>
-    </div>
-
-    <div class="orders-summary">
-      <article class="summary-card">
-        <p class="summary-card__label">Gross sales</p>
-        <strong>{{ formatCurrency(revenueCents) }}</strong>
-      </article>
-      <article class="summary-card">
-        <p class="summary-card__label">Average ticket</p>
-        <strong>{{ formatCurrency(averageTicketCents) }}</strong>
-      </article>
-      <article class="summary-card">
-        <p class="summary-card__label">Cash / digital</p>
-        <strong>{{ cashOrders }} / {{ digitalOrders }}</strong>
-      </article>
-    </div>
-
-    <div class="history-list">
-      <div v-if="recentOrders.length === 0" class="empty-state">
-        No completed orders yet. Finish a checkout from the register and it will appear here.
+      <div class="orders-toolbar">
+        <div class="orders-range">
+          <span class="orders-range__text">{{ rangeCaption }}</span>
+          <RangeSelector v-model="range" />
+        </div>
       </div>
+    </section>
 
-      <article v-for="order in recentOrders" :key="order.id" class="history-row">
-        <div>
-          <p class="history-row__ticket">Ticket {{ order.ticketNumber }}</p>
-          <p class="history-row__meta">{{ formatCompactDate(order.createdAt) }} · {{ order.paymentMethod }}</p>
+    <section class="orders-kpis">
+      <MetricCard label="Gross sales" :value="formatCurrency(grossSales)" />
+      <MetricCard label="Completed orders" :value="String(filteredOrders.length)" />
+      <MetricCard label="Average ticket" :value="formatCurrency(averageTicket)" />
+      <MetricCard label="Items sold" :value="String(itemCount)" />
+    </section>
+
+    <section class="orders-grid">
+      <ChartCard title="Payment Split" summary="Order volume and revenue by payment method.">
+        <div v-if="filteredOrders.length === 0" class="empty-state">
+          Completed orders appear here after checkout.
         </div>
-        <div class="history-row__items">
-          {{ order.items.map((item) => `${item.quantity}x ${item.name}`).join(', ') }}
+        <div v-else class="orders-payment-list">
+          <div v-for="entry in paymentTotals" :key="entry.method" class="orders-payment-row">
+            <div class="orders-payment-row__head">
+              <span class="orders-payment-row__label">
+                <Wallet v-if="entry.method === 'cash'" :size="15" />
+                <CreditCard v-else :size="15" />
+                {{ entry.label }}
+              </span>
+              <strong>{{ formatCurrency(entry.amount) }}</strong>
+            </div>
+            <div class="orders-payment-row__track">
+              <div class="orders-payment-row__fill" :style="{ width: `${entry.percentage}%` }" />
+            </div>
+            <p>{{ entry.count }} orders, {{ entry.percentage }}% of revenue</p>
+          </div>
         </div>
-        <div class="history-row__aside">
-          <span class="history-row__mode">{{ businessModeLabel(order.businessMode) }}</span>
-          <strong class="history-row__total">{{ formatCurrency(order.totalCents) }}</strong>
+      </ChartCard>
+
+      <ChartCard title="Business Modes" summary="Orders grouped by the active business mode when each ticket was completed.">
+        <div v-if="modeTotals.length === 0" class="empty-state">
+          Mode totals appear once orders match the filters.
+        </div>
+        <div v-else class="orders-mode-list">
+          <div v-for="entry in modeTotals" :key="entry.mode" class="orders-mode-row">
+            <div>
+              <strong>{{ entry.label }}</strong>
+              <p>{{ entry.count }} orders</p>
+            </div>
+            <span>{{ formatCurrency(entry.amount) }}</span>
+          </div>
+        </div>
+      </ChartCard>
+    </section>
+
+    <section class="orders-workspace">
+      <article class="orders-list-card">
+        <div class="orders-list-card__head">
+          <div>
+            <h2>Order History</h2>
+            <p>{{ filteredOrders.length }} of {{ rangeOrders.length }} orders in this range</p>
+          </div>
+          <span class="orders-tax">Tax {{ formatCurrency(taxCollected) }}</span>
+        </div>
+
+        <div class="orders-filters">
+          <label class="orders-search">
+            <Search :size="16" />
+            <input v-model="searchQuery" type="search" placeholder="Search ticket, customer, item, or payment" />
+            <button v-if="searchQuery" class="icon-button icon-button--sm" type="button" aria-label="Clear search" @click="searchQuery = ''">
+              <X :size="14" />
+            </button>
+          </label>
+          <select v-model="paymentFilter" class="sheet-input orders-select" aria-label="Filter by payment method">
+            <option value="all">All payments</option>
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="ewallet">E-wallet</option>
+          </select>
+          <select v-model="modeFilter" class="sheet-input orders-select" aria-label="Filter by business mode">
+            <option value="all">All modes</option>
+            <option value="coffee-shop">Coffee shop</option>
+            <option value="grocery">Grocery store</option>
+            <option value="restaurant">Restaurant</option>
+            <option value="nail-salon">Nail salon</option>
+          </select>
+        </div>
+
+        <div v-if="filteredOrders.length === 0" class="orders-empty">
+          No orders match the current filters.
+        </div>
+
+        <div v-else class="orders-list">
           <button
-            class="icon-button icon-button--sm"
+            v-for="order in filteredOrders"
+            :key="order.id"
+            class="orders-row"
+            :class="{ 'orders-row--active': selectedOrder?.id === order.id }"
             type="button"
-            :aria-label="`Print receipt for ticket ${order.ticketNumber}`"
-            @click="handlePrintReceipt(order)"
+            @click="selectedOrderId = order.id"
           >
-            <Printer :size="15" />
+            <span class="orders-row__icon">
+              <ReceiptText :size="17" />
+            </span>
+            <span class="orders-row__body">
+              <strong>Ticket {{ order.ticketNumber }}</strong>
+              <span>{{ order.customerName }} / {{ formatCompactDate(order.createdAt) }} / {{ paymentLabel(order.paymentMethod) }} / {{ orderTypeLabel(order.orderType) }}</span>
+            </span>
+            <span class="orders-row__amount">{{ formatCurrency(order.totalCents) }}</span>
+            <ArrowRight class="orders-row__arrow" :size="16" />
           </button>
         </div>
       </article>
-    </div>
-  </section>
+
+      <aside class="orders-detail">
+        <template v-if="selectedOrder">
+          <div class="orders-detail__head">
+            <div>
+              <p class="orders-detail__eyebrow">Selected ticket</p>
+              <h2>Ticket {{ selectedOrder.ticketNumber }}</h2>
+              <span>{{ formatFullDate(selectedOrder.createdAt) }}</span>
+            </div>
+            <button
+              class="icon-button"
+              type="button"
+              :aria-label="`Print receipt for ticket ${selectedOrder.ticketNumber}`"
+              @click="handlePrintReceipt(selectedOrder)"
+            >
+              <Printer :size="18" />
+            </button>
+          </div>
+
+          <div class="orders-detail__chips">
+            <span>{{ selectedOrder.customerName }}</span>
+            <span>{{ businessModeLabel(selectedOrder.businessMode) }}</span>
+            <span>{{ orderTypeLabel(selectedOrder.orderType) }}</span>
+            <span>{{ paymentLabel(selectedOrder.paymentMethod) }}</span>
+          </div>
+
+          <div class="orders-lines">
+            <div v-for="item in selectedOrder.items" :key="`${selectedOrder.id}-${item.productId}`" class="orders-line">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.quantity }} x {{ formatCurrency(item.unitPriceCents) }}</span>
+              </div>
+              <strong>{{ formatCurrency(item.lineTotalCents) }}</strong>
+            </div>
+          </div>
+
+          <div class="orders-totals">
+            <div>
+              <span>Subtotal</span>
+              <strong>{{ formatCurrency(selectedOrder.subtotalCents) }}</strong>
+            </div>
+            <div>
+              <span>Tax</span>
+              <strong>{{ formatCurrency(selectedOrder.taxCents) }}</strong>
+            </div>
+            <div class="orders-totals__grand">
+              <span>Total</span>
+              <strong>{{ formatCurrency(selectedOrder.totalCents) }}</strong>
+            </div>
+            <div v-if="selectedOrder.paymentMethod === 'cash'">
+              <span>Tendered</span>
+              <strong>{{ formatCurrency(selectedOrder.tenderedCents) }}</strong>
+            </div>
+            <div v-if="selectedOrder.paymentMethod === 'cash'">
+              <span>Change</span>
+              <strong>{{ formatCurrency(selectedOrder.changeCents) }}</strong>
+            </div>
+          </div>
+        </template>
+
+        <div v-else class="orders-empty orders-empty--detail">
+          Select an order to view receipt details.
+        </div>
+      </aside>
+    </section>
+  </div>
 </template>
+
+<style scoped>
+.orders-page {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-4) 0 var(--space-8);
+}
+
+.orders-header,
+.orders-grid,
+.orders-workspace {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.orders-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.orders-title {
+  margin: 0;
+  font: var(--type-title1);
+}
+
+.orders-copy {
+  max-width: 68ch;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.orders-toolbar,
+.orders-range,
+.orders-list-card__head,
+.orders-payment-row__head,
+.orders-mode-row,
+.orders-detail__head,
+.orders-line,
+.orders-totals div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.orders-range {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.orders-range__text,
+.orders-list-card__head p,
+.orders-payment-row p,
+.orders-mode-row p,
+.orders-detail__head span,
+.orders-line span,
+.orders-totals span {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.orders-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.orders-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.orders-payment-list,
+.orders-mode-list,
+.orders-list,
+.orders-lines,
+.orders-totals {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.orders-payment-row {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.orders-payment-row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font: var(--type-subhead);
+  font-weight: 600;
+}
+
+.orders-payment-row__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+}
+
+.orders-payment-row__fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+}
+
+.orders-mode-row {
+  padding: var(--space-3) 0;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.orders-mode-row:last-child {
+  border-bottom: none;
+}
+
+.orders-mode-row strong,
+.orders-mode-row span,
+.orders-list-card__head h2,
+.orders-detail__head h2,
+.orders-line strong,
+.orders-totals strong {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.orders-workspace {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  align-items: start;
+}
+
+.orders-list-card,
+.orders-detail {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.orders-list-card__head h2,
+.orders-detail__head h2 {
+  font: var(--type-headline);
+}
+
+.orders-tax {
+  flex: none;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.orders-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: var(--space-2);
+}
+
+.orders-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--text-tertiary);
+}
+
+.orders-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-subhead);
+}
+
+.orders-select {
+  min-width: 142px;
+}
+
+.orders-list {
+  max-height: 620px;
+  overflow: auto;
+  padding-right: var(--space-1);
+}
+
+.orders-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.orders-row:hover,
+.orders-row--active {
+  border-color: var(--separator);
+  background: var(--fill);
+}
+
+.orders-row__icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.orders-row__body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orders-row__body strong,
+.orders-row__body span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-row__body strong {
+  font: var(--type-subhead);
+  font-weight: 600;
+}
+
+.orders-row__body span {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.orders-row__amount {
+  font: var(--type-subhead);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.orders-row__arrow {
+  color: var(--text-tertiary);
+}
+
+.orders-detail {
+  position: sticky;
+  top: 20px;
+}
+
+.orders-detail__eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.orders-detail__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.orders-detail__chips span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.orders-lines {
+  padding: var(--space-3) 0;
+  border-top: 0.5px solid var(--separator);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.orders-line div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orders-line strong:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-totals__grand {
+  padding-top: var(--space-3);
+  border-top: 0.5px solid var(--separator);
+}
+
+.orders-totals__grand strong {
+  color: var(--accent);
+  font: var(--type-title2);
+}
+
+.orders-empty {
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--fill);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.orders-empty--detail {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+}
+
+@media (max-width: 1180px) {
+  .orders-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-grid,
+  .orders-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-detail {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .orders-header {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-range {
+    justify-content: flex-start;
+  }
+
+  .orders-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-select {
+    width: 100%;
+  }
+
+  .orders-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .orders-row__arrow {
+    display: none;
+  }
+}
+</style>

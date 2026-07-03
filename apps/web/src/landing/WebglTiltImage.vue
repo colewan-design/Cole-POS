@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
-const props = defineProps<{ src: string; alt: string }>()
+const props = withDefaults(defineProps<{ src: string; alt: string; interactive?: boolean }>(), { interactive: true })
 
 const container = ref<HTMLDivElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -282,8 +282,10 @@ onMounted(() => {
   ro = new ResizeObserver(resize)
   ro.observe(wrap)
 
-  wrap.addEventListener('pointermove', onPointerMove)
-  wrap.addEventListener('pointerleave', onPointerLeave)
+  if (props.interactive) {
+    wrap.addEventListener('pointermove', onPointerMove)
+    wrap.addEventListener('pointerleave', onPointerLeave)
+  }
 
   raf = requestAnimationFrame(render)
 })
@@ -300,12 +302,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="webgl-tilt" role="img" :aria-label="alt">
+  <div
+    ref="container"
+    class="webgl-tilt"
+    role="img"
+    :aria-label="alt"
+    :style="{ backgroundImage: `url(${src})` }"
+  >
     <canvas ref="canvas" class="webgl-tilt__canvas"></canvas>
   </div>
 </template>
 
 <style scoped>
-.webgl-tilt { width: 100%; height: 100%; }
+/* backgroundImage is a static fallback shown through the canvas whenever WebGL
+   is unavailable/fails (older browsers, locked-down drivers) — the canvas paints
+   over it with the tilt/glare effect once a context is successfully acquired. */
+.webgl-tilt { width: 100%; height: 100%; background-size: cover; background-position: center; border-radius: inherit; }
 .webgl-tilt__canvas { display: block; width: 100%; height: 100%; }
 </style>

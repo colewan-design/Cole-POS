@@ -64,6 +64,16 @@ export interface Product {
   businessModes: BusinessMode[]
 }
 
+export interface Customer {
+  id: string
+  name: string
+  phone?: string
+  email?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface OrderItemSummary {
   productId: string
   name: string
@@ -76,6 +86,8 @@ export interface OrderSummary {
   id: string
   ticketNumber: string
   businessMode: BusinessMode
+  customerId: string | null
+  customerName: string
   orderType: OrderType
   paymentMethod: PaymentMethod
   subtotalCents: number
@@ -103,6 +115,8 @@ export interface ShiftSummary {
   openingCashCents: number
   closingCashCents?: number | null
   cashSalesCents: number
+  totalSalesCents: number
+  orderCount: number
   payInsCents: number
   payOutsCents: number
   expectedCashCents: number
@@ -162,14 +176,19 @@ export interface CatalogSnapshot {
 
 export type CreateProductInput = Omit<Product, 'id'>
 export type CreateCategoryInput = { name: string }
+export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes'>
 
 export interface CreateOrderInput {
   businessMode: BusinessMode
+  customerId?: string | null
+  customerName?: string | null
   orderType: OrderType
   paymentMethod: PaymentMethod
   tenderedCents: number
   items: OrderItemSummary[]
 }
+
+export const guestCustomerName = 'Guest'
 
 export const defaultSettings: AppSettings = {
   businessMode: 'coffee-shop',

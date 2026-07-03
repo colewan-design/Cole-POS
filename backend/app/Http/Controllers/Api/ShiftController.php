@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CashMovement;
 use App\Models\Device;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Shift;
 use App\Models\StoreMembership;
@@ -21,6 +22,23 @@ class ShiftController extends Controller
 
         return response()->json([
             'shift' => $shift ? $this->serializeShift($shift) : null,
+        ]);
+    }
+
+    public function history(Request $request)
+    {
+        $device = $this->deviceFromRequest($request);
+
+        $shifts = Shift::query()
+            ->where('organization_id', $device->organization_id)
+            ->where('store_id', $device->store_id)
+            ->whereNotNull('closed_at')
+            ->latest('closed_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'shifts' => $shifts->map(fn (Shift $shift) => $this->serializeShift($shift))->all(),
         ]);
     }
 
@@ -136,6 +154,8 @@ class ShiftController extends Controller
             'openingCashCents' => $shift->opening_cash_cents,
             'closingCashCents' => $shift->closing_cash_cents,
             'cashSalesCents' => $cashSalesCents,
+            'totalSalesCents' => $this->totalSalesForShift($shift),
+            'orderCount' => $this->orderCountForShift($shift),
             'payInsCents' => $payInsCents,
             'payOutsCents' => $payOutsCents,
             'expectedCashCents' => $expectedCashCents,
@@ -185,6 +205,27 @@ class ShiftController extends Controller
                     );
             })
             ->sum('amount_cents');
+    }
+
+    private function ordersForShift(Shift $shift)
+    {
+        return Order::query()
+            ->where('store_id', $shift->store_id)
+            ->where('completed_at', '>=', $shift->opened_at)
+            ->when(
+                $shift->closed_at,
+                fn ($query) => $query->where('completed_at', '<=', $shift->closed_at),
+            );
+    }
+
+    private function totalSalesForShift(Shift $shift): int
+    {
+        return (int) $this->ordersForShift($shift)->sum('total_cents');
+    }
+
+    private function orderCountForShift(Shift $shift): int
+    {
+        return $this->ordersForShift($shift)->count();
     }
 
     private function currentShiftForDevice(Device $device): ?Shift

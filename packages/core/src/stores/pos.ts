@@ -4,12 +4,15 @@ import { getPosRepository } from '@pos/core/services/runtime'
 import {
   calculateTax,
   defaultSettings,
+  guestCustomerName,
   type AppEvent,
   type AppSettings,
   type Category,
   type CashMovementType,
   type CreateCategoryInput,
+  type CreateCustomerInput,
   type CreateProductInput,
+  type Customer,
   type OrderSummary,
   type OrderType,
   type PaymentMethod,
@@ -22,14 +25,17 @@ export const usePosStore = defineStore('pos', () => {
 
   const products = ref<Product[]>([])
   const categories = ref<{ id: string; name: string }[]>([])
+  const customers = ref<Customer[]>([])
   const orders = ref<OrderSummary[]>([])
   const appEvents = ref<AppEvent[]>([])
   const settings = ref<AppSettings>(defaultSettings)
   const activeShift = ref<ShiftSummary | null>(null)
+  const shiftHistory = ref<ShiftSummary[]>([])
   const search = ref('')
   const selectedCategoryId = ref('all')
   const paymentMethod = ref<PaymentMethod>('cash')
   const orderType = ref<OrderType>('takeaway')
+  const selectedCustomerId = ref<string | null>(null)
   const tenderedCents = ref(0)
   const tenderedInput = ref('')
   const cart = ref<Record<string, number>>({})
@@ -107,6 +113,10 @@ export const usePosStore = defineStore('pos', () => {
     ),
   )
   const pendingAppEvents = computed(() => appEvents.value.filter((event) => !event.sentAt))
+  const selectedCustomer = computed(() =>
+    customers.value.find((customer) => customer.id === selectedCustomerId.value) ?? null,
+  )
+  const selectedCustomerName = computed(() => selectedCustomer.value?.name ?? guestCustomerName)
 
   const lowStockProducts = computed(() =>
     products.value.filter((p) => {
@@ -121,8 +131,9 @@ export const usePosStore = defineStore('pos', () => {
   )
 
   async function initialize() {
-    const [catalog, savedOrders, savedSettings, savedEvents, savedShift] = await Promise.all([
+    const [catalog, savedCustomers, savedOrders, savedSettings, savedEvents, savedShift] = await Promise.all([
       repository.loadCatalog(),
+      repository.loadCustomers(),
       repository.loadOrders(),
       repository.loadSettings(),
       repository.loadAppEvents(),
@@ -131,6 +142,7 @@ export const usePosStore = defineStore('pos', () => {
 
     products.value = catalog.products
     categories.value = catalog.categories
+    customers.value = savedCustomers
     orders.value = savedOrders
     settings.value = savedSettings
     appEvents.value = savedEvents
@@ -187,6 +199,7 @@ export const usePosStore = defineStore('pos', () => {
   function clearCart() {
     cart.value = {}
     paymentMethod.value = 'cash'
+    selectedCustomerId.value = null
     tenderedInput.value = ''
     tenderedCents.value = 0
     void trackEvent('cart_cleared', {
@@ -279,11 +292,16 @@ export const usePosStore = defineStore('pos', () => {
     orderType.value = value
   }
 
+  function setSelectedCustomer(value: string | null) {
+    selectedCustomerId.value = value
+  }
+
   async function notePaymentSheetOpened() {
     await trackEvent('payment_sheet_opened', {
       totalCents: totalCents.value,
       itemCount: itemCount.value,
       businessMode: settings.value.businessMode,
+      customerName: selectedCustomerName.value,
     })
   }
 
@@ -291,6 +309,7 @@ export const usePosStore = defineStore('pos', () => {
     settings.value = next
     selectedCategoryId.value = 'all'
     await repository.saveSettings(next)
+    appEvents.value = await repository.loadAppEvents()
     const catalog = await repository.loadCatalog()
     products.value = catalog.products
     categories.value = catalog.categories
@@ -309,6 +328,35 @@ export const usePosStore = defineStore('pos', () => {
     const product = await repository.saveProduct(input)
     products.value = [product, ...products.value]
     return product
+  }
+
+  async function createCustomer(input: CreateCustomerInput) {
+    const customer = await repository.saveCustomer(input)
+    customers.value = [customer, ...customers.value]
+    selectedCustomerId.value = customer.id
+    return customer
+  }
+
+  async function editCustomer(customer: Customer) {
+    const nextCustomer = await repository.updateCustomer(customer)
+    const index = customers.value.findIndex((entry) => entry.id === nextCustomer.id)
+    if (index !== -1) {
+      customers.value[index] = nextCustomer
+    }
+    orders.value = orders.value.map((order) =>
+      order.customerId === nextCustomer.id
+        ? { ...order, customerName: nextCustomer.name }
+        : order,
+    )
+    return nextCustomer
+  }
+
+  async function removeCustomer(id: string) {
+    await repository.deleteCustomer(id)
+    customers.value = customers.value.filter((customer) => customer.id !== id)
+    if (selectedCustomerId.value === id) {
+      selectedCustomerId.value = null
+    }
   }
 
   async function editProduct(product: Product) {
@@ -361,6 +409,8 @@ export const usePosStore = defineStore('pos', () => {
 
     const order = await repository.saveOrder({
       businessMode: settings.value.businessMode,
+      customerId: selectedCustomer.value?.id ?? null,
+      customerName: selectedCustomerName.value,
       orderType: orderType.value,
       paymentMethod: paymentMethod.value,
       tenderedCents: paymentMethod.value === 'cash' ? tenderedCents.value : totalCents.value,
@@ -375,6 +425,14 @@ export const usePosStore = defineStore('pos', () => {
 
     orders.value = [order, ...orders.value]
     lastCompletedOrder.value = order
+
+    // saveOrder() updates the shift's cash/total-sales tallies in the repository layer,
+    // but doesn't return the shift itself — re-pull it so the reactive activeShift here
+    // (and anything bound to it, like the shift panel) reflects the new totals immediately.
+    if (activeShift.value) {
+      await refreshActiveShift()
+    }
+
     await trackEvent('order_completed', {
       orderId: order.id,
       paymentMethod: order.paymentMethod,
@@ -416,6 +474,7 @@ export const usePosStore = defineStore('pos', () => {
 
     cart.value = {}
     paymentMethod.value = 'cash'
+    selectedCustomerId.value = null
     tenderedInput.value = ''
     tenderedCents.value = 0
     shiftError.value = ''
@@ -466,22 +525,33 @@ export const usePosStore = defineStore('pos', () => {
     shiftError.value = ''
     const closedShift = await repository.closeShift({ countedCashCents, userId })
     activeShift.value = null
+    shiftHistory.value = [closedShift, ...shiftHistory.value]
     return closedShift
+  }
+
+  async function refreshShiftHistory() {
+    shiftHistory.value = await repository.loadShiftHistory()
+    return shiftHistory.value
   }
 
   return {
     isReady,
     products,
     categories,
+    customers,
     orders,
     appEvents,
     pendingAppEvents,
     settings,
     activeShift,
+    shiftHistory,
     search,
     selectedCategoryId,
     paymentMethod,
     orderType,
+    selectedCustomerId,
+    selectedCustomer,
+    selectedCustomerName,
     tenderedCents,
     tenderedInput,
     lastCompletedOrder,
@@ -514,18 +584,23 @@ export const usePosStore = defineStore('pos', () => {
     setCategory,
     setPaymentMethod,
     setOrderType,
+    setSelectedCustomer,
     notePaymentSheetOpened,
     updateSettings,
     completeOrder,
     clearLowStockAlert,
     restockProduct,
     refreshActiveShift,
+    refreshShiftHistory,
     openShift,
     addCashMovement,
     closeShift,
     createProduct,
     editProduct,
     removeProduct,
+    createCustomer,
+    editCustomer,
+    removeCustomer,
     createCategory,
     editCategory,
     removeCategory,

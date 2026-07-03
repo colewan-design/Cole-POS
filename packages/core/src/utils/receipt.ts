@@ -100,6 +100,10 @@ export function buildReceiptHtml(order: OrderSummary, business: ReceiptBusinessI
     <span>${escapeHtml(orderTypeLabel(order))}</span>
   </div>
   <div class="receipt-row">
+    <span>Customer</span>
+    <span>${escapeHtml(order.customerName)}</span>
+  </div>
+  <div class="receipt-row">
     <span>Payment</span>
     <span>${escapeHtml(paymentMethodLabel(order))}</span>
   </div>
@@ -134,7 +138,7 @@ export function buildReceiptHtml(order: OrderSummary, business: ReceiptBusinessI
 </html>`
 }
 
-export function printReceipt(order: OrderSummary, business: ReceiptBusinessInfo): void {
+function printHtmlDocument(html: string): void {
   const iframe = document.createElement('iframe')
   iframe.style.position = 'fixed'
   iframe.style.right = '0'
@@ -177,6 +181,50 @@ export function printReceipt(order: OrderSummary, business: ReceiptBusinessInfo)
   }
 
   doc.open()
-  doc.write(buildReceiptHtml(order, business))
+  doc.write(html)
   doc.close()
+}
+
+export function printReceipt(order: OrderSummary, business: ReceiptBusinessInfo): void {
+  printHtmlDocument(buildReceiptHtml(order, business))
+}
+
+function buildTestReceiptHtml(business: ReceiptBusinessInfo): string {
+  const businessName = escapeHtml(business.name || 'Cole POS')
+  const timestamp = escapeHtml(new Date().toLocaleString())
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test print</title>
+<style>
+  @page { size: 80mm auto; margin: 4mm; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    width: 72mm;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    color: #000;
+    text-align: center;
+  }
+  .receipt-business-name { font-size: 15px; font-weight: 700; margin: 0 0 2px; }
+  .receipt-meta { margin: 0; font-size: 11px; }
+  .receipt-divider { border-top: 1px dashed #000; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <p class="receipt-business-name">${businessName}</p>
+  <p class="receipt-meta">Printer test page</p>
+  <div class="receipt-divider"></div>
+  <p class="receipt-meta">Printed ${timestamp}</p>
+  <p class="receipt-meta">If this printed correctly, your receipt printer is ready to use.</p>
+</body>
+</html>`
+}
+
+export function printTestReceipt(business: ReceiptBusinessInfo): void {
+  printHtmlDocument(buildTestReceiptHtml(business))
 }

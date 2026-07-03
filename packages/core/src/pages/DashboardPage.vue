@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Funnel, ChevronRight } from '@lucide/vue'
-import { formatCurrency, type OrderSummary } from '@pos/shared/index'
+import { formatCurrency, guestCustomerName, type OrderSummary } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
@@ -38,10 +38,7 @@ function hashValue(seed: string) {
 }
 
 function customerNameFor(order: OrderSummary) {
-  const firstNames = ['Sarah', 'Michael', 'Emily', 'James', 'Olivia', 'Noah', 'Sophia', 'Liam', 'Ava', 'Lucas']
-  const lastNames = ['Johnson', 'Brown', 'Davis', 'Wilson', 'Martinez', 'Lee', 'Garcia', 'Taylor', 'Anderson', 'Thomas']
-  const hash = hashValue(order.id)
-  return `${firstNames[hash % firstNames.length]} ${lastNames[Math.floor(hash / firstNames.length) % lastNames.length]}`
+  return order.customerName || guestCustomerName
 }
 
 function channelFor(order: OrderSummary): Channel {
@@ -122,24 +119,25 @@ const previousAverageOrderValue = computed(() =>
 )
 
 function repeatCustomerRate(orders: OrderSummary[]) {
-  if (orders.length === 0) {
+  const namedOrders = orders.filter((order) => customerNameFor(order) !== guestCustomerName)
+  if (namedOrders.length === 0) {
     return 0
   }
 
   const counts = new Map<string, number>()
-  for (const order of orders) {
+  for (const order of namedOrders) {
     const customer = customerNameFor(order)
     counts.set(customer, (counts.get(customer) ?? 0) + 1)
   }
 
   let repeatOrders = 0
-  for (const order of orders) {
+  for (const order of namedOrders) {
     if ((counts.get(customerNameFor(order)) ?? 0) > 1) {
       repeatOrders += 1
     }
   }
 
-  return (repeatOrders / orders.length) * 100
+  return (repeatOrders / namedOrders.length) * 100
 }
 
 const returnCustomers = computed(() => repeatCustomerRate(periodOrders.value))
