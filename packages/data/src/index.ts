@@ -22,13 +22,13 @@ import {
   type UserAccount,
 } from '@pos/shared/index'
 import {
-  createSupabaseSync,
-  type SupabaseSyncConfig,
-  type SupabaseSyncSession,
-  type SupabaseSync,
-} from './supabase-sync'
+  createFirebaseSync,
+  type FirebaseSyncConfig,
+  type FirebaseSyncSession,
+  type FirebaseSync,
+} from './firebase-sync'
 
-export type { SupabaseSyncConfig }
+export type { FirebaseSyncConfig }
 
 export interface DataStore {
   read<T>(key: string, fallback: T): Promise<T>
@@ -91,7 +91,7 @@ export interface PosRepository {
 
 export interface BrowserPosRepositoryOptions {
   store?: DataStore
-  sync?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>
+  sync?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>
 }
 
 interface SyncConfig {
@@ -340,7 +340,7 @@ class BrowserIndexedDbStore implements DataStore {
   }
 }
 
-function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>): SyncConfig | null {
+function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>): SyncConfig | null {
   const cfg = input as Partial<SyncConfig>
   if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode || !cfg.pairingCode) {
     return null
@@ -357,17 +357,16 @@ function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<SupabaseSyncC
   }
 }
 
-function normalizeSupabaseSyncConfig(
-  input?: Partial<SyncConfig> | Partial<SupabaseSyncConfig>,
-): SupabaseSyncConfig | null {
-  const cfg = input as Partial<SupabaseSyncConfig>
-  if (!cfg?.supabaseUrl || !cfg.supabaseAnonKey || !cfg.organizationSlug || !cfg.storeCode) {
+function normalizeFirebaseSyncConfig(
+  input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>,
+): FirebaseSyncConfig | null {
+  const cfg = input as Partial<FirebaseSyncConfig>
+  if (!cfg?.firebaseConfig?.apiKey || !cfg.organizationSlug || !cfg.storeCode) {
     return null
   }
 
   return {
-    supabaseUrl: cfg.supabaseUrl,
-    supabaseAnonKey: cfg.supabaseAnonKey,
+    firebaseConfig: cfg.firebaseConfig,
     organizationSlug: cfg.organizationSlug,
     storeCode: cfg.storeCode,
     deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
@@ -519,13 +518,13 @@ function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[
 
 export function createBrowserPosRepository(options: BrowserPosRepositoryOptions = {}): PosRepository {
   const store = options.store ?? new BrowserIndexedDbStore()
-  const supabaseConfig = normalizeSupabaseSyncConfig(options.sync)
-  const syncConfig = supabaseConfig ? null : normalizeSyncConfig(options.sync)
-  const supabaseSync: SupabaseSync | null = supabaseConfig ? createSupabaseSync(supabaseConfig) : null
-  const appVersion = supabaseConfig?.appVersion ?? syncConfig?.appVersion ?? '0.1.0'
+  const firebaseConfig = normalizeFirebaseSyncConfig(options.sync)
+  const syncConfig = firebaseConfig ? null : normalizeSyncConfig(options.sync)
+  const firebaseSync: FirebaseSync | null = firebaseConfig ? createFirebaseSync(firebaseConfig) : null
+  const appVersion = firebaseConfig?.appVersion ?? syncConfig?.appVersion ?? '0.1.0'
 
   async function isOnlineSyncEnabled() {
-    if (!syncConfig && !supabaseSync) {
+    if (!syncConfig && !firebaseSync) {
       return false
     }
 
@@ -533,20 +532,20 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     return settings.syncMode === 'online-sync'
   }
 
-  async function readSupabaseSession(): Promise<SupabaseSyncSession | null> {
-    return store.read<SupabaseSyncSession | null>(storageKeys.syncSession, null)
+  async function readFirebaseSession(): Promise<FirebaseSyncSession | null> {
+    return store.read<FirebaseSyncSession | null>(storageKeys.syncSession, null)
   }
 
-  async function writeSupabaseSession(session: SupabaseSyncSession | null): Promise<void> {
+  async function writeFirebaseSession(session: FirebaseSyncSession | null): Promise<void> {
     await store.write(storageKeys.syncSession, session)
   }
 
-  async function getSupabaseSession(): Promise<SupabaseSyncSession | null> {
-    if (!supabaseSync) return null
-    const cached = await readSupabaseSession()
-    const live = await supabaseSync.getCurrentSession(cached)
+  async function getFirebaseSession(): Promise<FirebaseSyncSession | null> {
+    if (!firebaseSync) return null
+    const cached = await readFirebaseSession()
+    const live = await firebaseSync.getCurrentSession(cached)
     if (live && (!cached || live.organizationId !== cached.organizationId)) {
-      await writeSupabaseSession(live)
+      await writeFirebaseSession(live)
     }
     return live
   }
@@ -600,10 +599,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function refreshRemoteShift() {
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
       if (!session) return null
-      const shift = await supabaseSync.getCurrentShift(session.storeId)
+      const shift = await firebaseSync.getCurrentShift(session.storeId)
       await writeActiveShift(shift)
       return shift
     }
@@ -711,10 +710,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function syncCatalogFromBootstrap() {
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
-      if (!session) throw new Error('No Supabase session for bootstrap.')
-      const result = await supabaseSync.bootstrapCatalog(session.organizationId)
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
+      if (!session) throw new Error('No Firebase session for bootstrap.')
+      const result = await firebaseSync.bootstrapCatalog(session.organizationId, session.storeId)
       await store.write(storageKeys.categories, result.categories)
       await store.write(storageKeys.products, result.products)
       await writeSyncCursor(result.cursor)
@@ -744,12 +743,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function pullCatalogChanges() {
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
       if (!session) return
       const cursor = await readSyncCursor()
       if (!cursor) return
-      const result = await supabaseSync.pullChanges(session.organizationId, cursor)
+      const result = await firebaseSync.pullChanges(session.organizationId, session.storeId, cursor)
 
       const currentCategories = await store.read<Category[]>(storageKeys.categories, [])
       const currentProducts = await store.read<Product[]>(storageKeys.products, [])
@@ -824,10 +823,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return
     }
 
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
       if (!session) return
-      const appliedIds = await supabaseSync.pushEvents(events, session)
+      const appliedIds = await firebaseSync.pushEvents(events, session)
       if (appliedIds.size > 0) {
         await writeOutbox(events.filter((event) => !appliedIds.has(event.id)))
       }
@@ -976,10 +975,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
       if (!session) return null
-      const users = await supabaseSync.loadUsers(session.organizationId)
+      const users = await firebaseSync.loadUsers(session.organizationId)
       await store.write(storageKeys.users, users)
       return users
     }
@@ -994,10 +993,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
-    if (supabaseSync) {
-      const session = await getSupabaseSession()
+    if (firebaseSync) {
+      const session = await getFirebaseSession()
       if (!session) return null
-      const roles = await supabaseSync.loadRoles(session.organizationId)
+      const roles = await firebaseSync.loadRoles(session.organizationId)
       await store.write(storageKeys.roles, roles)
       return roles
     }
@@ -1140,10 +1139,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async openShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (supabaseSync) {
-          const session = await getSupabaseSession()
+        if (firebaseSync) {
+          const session = await getFirebaseSession()
           if (session) {
-            const shift = await supabaseSync.openShift({
+            const shift = await firebaseSync.openShift({
               openingCashCents: input.openingCashCents,
               userId: input.userId ?? null,
               storeId: session.storeId,
@@ -1188,11 +1187,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async addCashMovement(input) {
       if (await isOnlineSyncEnabled()) {
-        if (supabaseSync) {
-          const session = await getSupabaseSession()
+        if (firebaseSync) {
+          const session = await getFirebaseSession()
           const current = await readActiveShift()
           if (session && current && !current.closedAt) {
-            const shift = await supabaseSync.addCashMovement({
+            const shift = await firebaseSync.addCashMovement({
               shiftId: current.id,
               storeId: session.storeId,
               organizationId: session.organizationId,
@@ -1255,11 +1254,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async closeShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (supabaseSync) {
-          const session = await getSupabaseSession()
+        if (firebaseSync) {
+          const session = await getFirebaseSession()
           const current = await readActiveShift()
           if (session && current && !current.closedAt) {
-            const shift = await supabaseSync.closeShift({
+            const shift = await firebaseSync.closeShift({
               shiftId: current.id,
               countedCashCents: input.countedCashCents,
               expectedCashCents: current.expectedCashCents,
@@ -1341,7 +1340,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (settings.syncMode === 'online-sync') {
         try {
-          if (!supabaseSync) {
+          if (!firebaseSync) {
             await ensureRemoteSession()
           }
           await syncCatalogFromBootstrap()
@@ -1372,8 +1371,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loginUser(username, password) {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (supabaseSync) {
-            const result = await supabaseSync.loginUser(username, password)
+          if (firebaseSync) {
+            const result = await firebaseSync.loginUser(username, password)
             if (result) {
               const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
               await store.write(storageKeys.users, [
@@ -1381,7 +1380,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
                 ...existingUsers.filter((u) => u.id !== result.user.id),
               ])
               await store.write(storageKeys.session, result.session)
-              await writeSupabaseSession(result.syncSession)
+              await writeFirebaseSession(result.syncSession)
               return { user: result.user, session: result.session }
             }
           } else {
@@ -1440,8 +1439,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async registerUser(input) {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (supabaseSync) {
-            const result = await supabaseSync.registerUser(input)
+          if (firebaseSync) {
+            const result = await firebaseSync.registerUser(input)
             if (result) {
               const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
               await store.write(storageKeys.users, [
@@ -1449,7 +1448,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
                 ...existingUsers.filter((u) => u.id !== result.user.id),
               ])
               await store.write(storageKeys.session, result.session)
-              await writeSupabaseSession(result.syncSession)
+              await writeFirebaseSession(result.syncSession)
               return { user: result.user, session: result.session }
             }
           } else {
@@ -1530,10 +1529,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (supabaseSync) {
-            const session = await getSupabaseSession()
+          if (firebaseSync) {
+            const session = await getFirebaseSession()
             if (session) {
-              await supabaseSync.updateUserRole(userId, roleId, session.organizationId)
+              await firebaseSync.updateUserRole(userId, roleId, session.organizationId)
               const refreshedUsers = await tryLoadRemoteUsers()
               if (refreshedUsers) return
             }
@@ -1570,10 +1569,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (supabaseSync) {
-            const session = await getSupabaseSession()
+          if (firebaseSync) {
+            const session = await getFirebaseSession()
             if (session) {
-              const saved = await supabaseSync.saveRoles(roles, session.organizationId)
+              const saved = await firebaseSync.saveRoles(roles, session.organizationId)
               await store.write(storageKeys.roles, saved)
             }
           } else {
