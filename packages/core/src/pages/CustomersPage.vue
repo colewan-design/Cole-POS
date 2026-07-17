@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ChevronRight, Pencil, Plus, Search, Trash2, Users, X } from '@lucide/vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
@@ -14,6 +15,14 @@ onMounted(() => {
     void store.initialize()
   }
 })
+
+const tierFilterOptions: { value: 'all' | CustomerTier; label: string }[] = [
+  { value: 'all',        label: 'All tiers' },
+  { value: 'VIP',        label: 'VIP' },
+  { value: 'Regular',    label: 'Regular' },
+  { value: 'Occasional', label: 'Occasional' },
+  { value: 'New',        label: 'New' },
+]
 
 const range = ref<Range>('month')
 const searchQuery = ref('')
@@ -538,13 +547,12 @@ const previousRangeCaption = computed(() => {
               <input v-model="searchQuery" type="search" placeholder="Search customer, item, payment, or contact" />
             </label>
 
-            <select v-model="tierFilter" class="sheet-input customers-select" aria-label="Filter customers by tier">
-              <option value="all">All tiers</option>
-              <option value="VIP">VIP</option>
-              <option value="Regular">Regular</option>
-              <option value="Occasional">Occasional</option>
-              <option value="New">New</option>
-            </select>
+            <AutocompleteSelect
+              v-model="tierFilter"
+              class="customers-select"
+              label="Filter customers by tier"
+              :options="tierFilterOptions"
+            />
           </div>
 
           <span class="customers-table__note">
@@ -642,6 +650,7 @@ const previousRangeCaption = computed(() => {
 <style scoped>
 .customers-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -872,6 +881,7 @@ const previousRangeCaption = computed(() => {
 }
 
 .customers-select {
+  width: 100%;
   min-width: 160px;
 }
 
@@ -921,9 +931,16 @@ const previousRangeCaption = computed(() => {
 @media (max-width: 780px) {
   .customers-header,
   .customers-grid,
-  .customers-kpis,
   .customers-form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customers-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customers-copy {
+    display: none;
   }
 
   .customers-toolbar,

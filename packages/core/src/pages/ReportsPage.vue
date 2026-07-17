@@ -357,6 +357,7 @@ const rangeCaption = computed(() => {
 <style scoped>
 .reports-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -581,7 +582,7 @@ const rangeCaption = computed(() => {
   .reports-header,
   .reports-kpis,
   .reports-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .reports-range {
@@ -602,7 +603,7 @@ const rangeCaption = computed(() => {
   }
 
   .reports-shift__stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .reports-shift-history__cash {

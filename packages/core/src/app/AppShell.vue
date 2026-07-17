@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Bell, LogOut, Menu, Search, UserCircle2, X } from '@lucide/vue'
-import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppNav from '@pos/core/components/AppNav.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
@@ -13,6 +13,7 @@ const router = useRouter()
 const navOpen = ref(false)
 const profileOpen = ref(false)
 const search = ref('')
+const hydratedSessionUserId = ref<string | null | undefined>(undefined)
 
 const showShellChrome = computed(() => route.name !== 'auth' && !!auth.currentUser)
 const isRegisterRoute = computed(() => route.name === 'register')
@@ -81,10 +82,24 @@ watchEffect(() => {
   document.documentElement.dataset.colorTheme = theme
 })
 
+watch(
+  () => [auth.isReady, auth.session?.userId ?? null] as const,
+  ([ready, userId]) => {
+    if (!ready) {
+      return
+    }
+
+    if (hydratedSessionUserId.value === userId && store.isReady) {
+      return
+    }
+
+    hydratedSessionUserId.value = userId
+    void store.initialize(true)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
-  if (!store.isReady) {
-    void store.initialize()
-  }
   if (!auth.isReady) {
     void auth.initialize()
   }
@@ -182,7 +197,6 @@ onUnmounted(() => {
 
 .workspace-shell__register {
   min-height: 100vh;
-  padding: 20px;
 }
 
 .workspace-shell__sidebar {
@@ -316,6 +330,7 @@ onUnmounted(() => {
 
 .workspace-topbar__content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 

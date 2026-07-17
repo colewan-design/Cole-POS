@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Check, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
+import { Check, ChevronRight, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ProductSheet from '@pos/core/components/ProductSheet.vue'
-import SelectMenu from '@pos/core/components/SelectMenu.vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { usePosStore } from '@pos/core/stores/pos'
+import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 import { formatCurrency, type BusinessMode, type Category, type Product } from '@pos/shared/index'
 
 const store = usePosStore()
@@ -12,11 +13,33 @@ const store = usePosStore()
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 const activeTab = ref<'products' | 'categories'>('products')
 
+function setActiveTab(tab: 'products' | 'categories') {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  haptic(ImpactStyle.Light)
+}
+
 // ── Filters ───────────────────────────────────────────────────────────────────
 const modeFilter = ref<BusinessMode | 'all'>('all')
 const searchQuery = ref('')
 const sortBy = ref<'name' | 'price' | 'low-stock' | 'recently-added'>('name')
 const availabilityFilter = ref<'all' | 'active' | 'inactive'>('all')
+
+function setModeFilter(value: typeof modeFilter.value) {
+  if (modeFilter.value === value) return
+  modeFilter.value = value
+  haptic(ImpactStyle.Light)
+}
+
+// ── Search field (Cancel-on-focus) ───────────────────────────────────────────
+const searchInputEl = ref<HTMLInputElement | null>(null)
+const searchFocused = ref(false)
+
+function onSearchCancel() {
+  searchQuery.value = ''
+  searchFocused.value = false
+  searchInputEl.value?.blur()
+}
 
 // ── Virtual list ──────────────────────────────────────────────────────────────
 const HEADER_H = 44
@@ -41,7 +64,13 @@ function onScroll(e: Event) {
   scrollTop.value = (e.target as HTMLElement).scrollTop
 }
 
-watch([searchQuery, modeFilter, availabilityFilter, sortBy], () => {
+// Large-title nav bar collapse progress: 0 (expanded) → 1 (collapsed), driven
+// directly by list scroll position so the transition interpolates continuously
+// instead of snapping at a breakpoint. Matches iOS's ~40px collapse distance.
+const COLLAPSE_DISTANCE = 40
+const collapseProgress = computed(() => Math.min(1, Math.max(0, scrollTop.value / COLLAPSE_DISTANCE)))
+
+watch([searchQuery, modeFilter, availabilityFilter, sortBy, activeTab], () => {
   nextTick(() => {
     if (scrollEl.value) scrollEl.value.scrollTop = 0
     scrollTop.value = 0
@@ -202,25 +231,121 @@ async function toggleAvailability(product: Product) {
   await store.editProduct({ ...product, outOfStock: !product.outOfStock })
 }
 
+// ── Swipe-to-reveal row actions (mobile) ─────────────────────────────────────
+// Width must match the .p-row__actions width set in <style> below.
+const REVEAL_WIDTH = 96
+
+const isMobile = ref(false)
+const swipeOpenId = ref<string | null>(null)
+const dragId = ref<string | null>(null)
+let dragStartX = 0
+const dragDeltaX = ref(0)
+let thresholdCrossed = false
+
+onMounted(() => {
+  const mq = window.matchMedia('(max-width: 720px)')
+  isMobile.value = mq.matches
+  const handleChange = (e: MediaQueryListEvent) => {
+    isMobile.value = e.matches
+    if (!isMobile.value) swipeOpenId.value = null
+  }
+  mq.addEventListener('change', handleChange)
+  onUnmounted(() => mq.removeEventListener('change', handleChange))
+})
+
+function onSwipeStart(id: string, e: PointerEvent) {
+  if (!isMobile.value) return
+  if (swipeOpenId.value && swipeOpenId.value !== id) swipeOpenId.value = null
+  dragId.value = id
+  dragStartX = e.clientX
+  dragDeltaX.value = 0
+  thresholdCrossed = false
+  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+}
+
+function onSwipeMove(id: string, e: PointerEvent) {
+  if (dragId.value !== id) return
+  const base = swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+  const min = -REVEAL_WIDTH - base
+  const max = -base
+  dragDeltaX.value = Math.max(min, Math.min(max, e.clientX - dragStartX))
+
+  const crossed = base + dragDeltaX.value < -REVEAL_WIDTH / 2
+  if (crossed && !thresholdCrossed) {
+    thresholdCrossed = true
+    haptic(ImpactStyle.Light)
+  } else if (!crossed && thresholdCrossed) {
+    thresholdCrossed = false
+  }
+}
+
+// A drag past the tap threshold shouldn't also fire the row's open-detail tap;
+// pointerup (which sets this) always fires before the synthetic click event.
+let suppressNextClick = false
+
+function onSwipeEnd(id: string) {
+  if (dragId.value !== id) return
+  const wasOpen = swipeOpenId.value === id
+  const base = wasOpen ? -REVEAL_WIDTH : 0
+  const finalOffset = base + dragDeltaX.value
+  const moved = Math.abs(dragDeltaX.value) > 4
+  if (moved) suppressNextClick = true
+
+  if (!moved) {
+    if (wasOpen) swipeOpenId.value = null
+  } else {
+    swipeOpenId.value = finalOffset < -REVEAL_WIDTH / 2 ? id : null
+  }
+
+  dragId.value = null
+  dragDeltaX.value = 0
+}
+
+function onRowClick(product: Product) {
+  if (suppressNextClick) {
+    suppressNextClick = false
+    return
+  }
+  onRowTap(product)
+}
+
+function frontOffset(id: string) {
+  if (dragId.value === id) {
+    const base = swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+    return base + dragDeltaX.value
+  }
+  return swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+}
+
 // ── Restock ───────────────────────────────────────────────────────────────────
-const restockingId = ref<string | null>(null)
+// Swipe action commits a fixed +1 restock in one tap (no quantity prompt) —
+// see summary note: custom quantities still go through the product sheet.
 const restockQty = ref(1)
-
-function openRestock(id: string, e: Event) {
-  e.stopPropagation()
-  restockingId.value = id
-  restockQty.value = 1
-}
-
-function cancelRestock(e: Event) {
-  e.stopPropagation()
-  restockingId.value = null
-}
 
 async function submitRestock(id: string, e: Event) {
   e.stopPropagation()
-  if (restockQty.value > 0) await store.restockProduct(id, restockQty.value)
-  restockingId.value = null
+  await store.restockProduct(id, restockQty.value)
+  if (swipeOpenId.value === id) swipeOpenId.value = null
+  haptic(ImpactStyle.Medium)
+}
+
+// ── Stock status (dot + label) ───────────────────────────────────────────────
+function stockDotClass(p: Product): string {
+  if (p.stockQty !== undefined) {
+    if (p.stockQty === 0) return 'p-row__dot--danger'
+    if (p.stockQty <= (p.lowStockThreshold ?? 5)) return 'p-row__dot--warning'
+    return 'p-row__dot--success'
+  }
+  return p.outOfStock ? 'p-row__dot--danger' : 'p-row__dot--success'
+}
+
+function stockLabel(p: Product): string {
+  if (p.stockQty !== undefined) {
+    if (p.stockQty === 0) return 'Out of stock'
+    if (p.stockQty <= (p.lowStockThreshold ?? 5)) return `${p.stockQty} left`
+    return `${p.stockQty} in stock`
+  }
+  return p.outOfStock ? 'Out of stock' : 'In stock'
 }
 
 // ── Thumbnails ────────────────────────────────────────────────────────────────
@@ -276,27 +401,45 @@ async function confirmDeleteCategory(id: string) {
 
 <template>
   <div class="products-page">
-    <!-- ── Page header ──────────────────────────────────────────────────────── -->
-    <div class="products-page__header">
-      <div class="products-page__titleblock">
-        <h1 class="products-page__title">Products</h1>
-        <span class="products-page__count">{{ store.products.length }} products</span>
+    <!-- ── Large-title nav bar: collapses as the list scrolls ─────────────── -->
+    <div class="p-navbar" :style="{ '--collapse': collapseProgress }">
+      <div class="p-navbar__row">
+        <span class="p-navbar__small-title" aria-hidden="true">Products</span>
+        <button
+          v-if="activeTab === 'products'"
+          class="p-navbar__trailing icon-button"
+          type="button"
+          aria-label="Add product"
+          @click="openAdd"
+        >
+          <Plus :size="20" />
+        </button>
       </div>
-      <button
-        v-if="activeTab === 'products'"
-        class="primary-button products-page__add-btn"
-        type="button"
-        @click="openAdd"
-      >
-        <Plus :size="16" aria-hidden="true" />
-        <span class="products-page__add-label">Add product</span>
-      </button>
+      <div class="p-navbar__large-wrap">
+        <h1 class="p-navbar__large-title">Products</h1>
+        <span class="p-navbar__count">{{ store.products.length }} products</span>
+      </div>
     </div>
 
-    <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
-    <div class="category-tabs">
-      <button class="category-tab" :class="{ active: activeTab === 'products' }" type="button" @click="activeTab = 'products'">Products</button>
-      <button class="category-tab" :class="{ active: activeTab === 'categories' }" type="button" @click="activeTab = 'categories'">Categories</button>
+    <!-- ── Products / Categories segmented control ─────────────────────────── -->
+    <div class="p-segctrl" role="tablist" aria-label="View">
+      <div class="p-segctrl__knob" :style="{ transform: `translateX(${activeTab === 'products' ? 0 : 100}%)` }" aria-hidden="true" />
+      <button
+        class="p-segctrl__option"
+        :class="{ 'p-segctrl__option--active': activeTab === 'products' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'products'"
+        @click="setActiveTab('products')"
+      >Products</button>
+      <button
+        class="p-segctrl__option"
+        :class="{ 'p-segctrl__option--active': activeTab === 'categories' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'categories'"
+        @click="setActiveTab('categories')"
+      >Categories</button>
     </div>
 
     <!-- ══ Products tab ══════════════════════════════════════════════════════ -->
@@ -315,32 +458,48 @@ async function confirmDeleteCategory(id: string) {
           class="segment-button"
           :class="{ active: modeFilter === opt.value }"
           type="button"
-          @click="modeFilter = opt.value as typeof modeFilter"
+          @click="setModeFilter(opt.value as typeof modeFilter)"
         >{{ opt.label }}</button>
       </div>
 
       <!-- Toolbar: search + sort + availability + select mode -->
       <div class="ptoolbar">
-        <label class="psearch">
-          <Search :size="16" class="psearch__icon" aria-hidden="true" />
-          <input
-            v-model="searchQuery"
-            class="psearch__input"
-            type="search"
-            placeholder="Search products, SKU, barcode…"
-            aria-label="Search products"
-          />
+        <div class="p-search-row">
+          <label
+            class="psearch products-page__search"
+            :class="{ 'products-page__search--focused': searchFocused }"
+          >
+            <Search :size="16" class="psearch__icon" aria-hidden="true" />
+            <input
+              ref="searchInputEl"
+              v-model="searchQuery"
+              class="psearch__input"
+              type="search"
+              placeholder="Search products, SKU, barcode…"
+              aria-label="Search products"
+              @focus="searchFocused = true"
+              @blur="searchFocused = false"
+            />
+            <button
+              v-if="searchQuery && !searchFocused"
+              class="psearch__clear icon-button"
+              type="button"
+              aria-label="Clear search"
+              @click="searchQuery = ''"
+            ><X :size="14" /></button>
+          </label>
+
           <button
-            v-if="searchQuery"
-            class="psearch__clear icon-button"
+            class="p-search-cancel"
+            :class="{ 'p-search-cancel--visible': searchFocused || !!searchQuery }"
             type="button"
-            aria-label="Clear search"
-            @click="searchQuery = ''"
-          ><X :size="14" /></button>
-        </label>
+            tabindex="-1"
+            @mousedown.prevent="onSearchCancel"
+          >Cancel</button>
+        </div>
 
         <div class="ptoolbar__controls">
-          <SelectMenu
+          <AutocompleteSelect
             v-model="sortBy"
             label="Sort products by"
             :options="[
@@ -435,115 +594,104 @@ async function confirmDeleteCategory(id: string) {
             <div
               v-else
               class="p-row"
-              :class="{
-                'p-row--inactive': item.product.outOfStock,
-                'p-row--selected': selectedIds.has(item.product.id),
-              }"
               :style="{ top: item.y + 'px' }"
-              role="button"
-              tabindex="0"
-              :aria-label="
-                selectMode
-                  ? `${selectedIds.has(item.product.id) ? 'Deselect' : 'Select'} ${item.product.name}`
-                  : `Edit ${item.product.name}`
-              "
-              @click="onRowTap(item.product)"
-              @keydown.enter.prevent="onRowTap(item.product)"
-              @keydown.space.prevent="onRowTap(item.product)"
-              @pointerdown="onRowPointerDown(item.product)"
-              @pointerup="cancelLongPress"
-              @pointercancel="cancelLongPress"
-              @pointermove="cancelLongPress"
             >
-              <!-- Select checkbox -->
               <div
-                v-if="selectMode"
-                class="p-row__checkbox"
-                :class="{ 'p-row__checkbox--on': selectedIds.has(item.product.id) }"
-                aria-hidden="true"
+                class="p-row__front"
+                :class="{
+                  'p-row--inactive': item.product.outOfStock,
+                  'p-row--selected': selectedIds.has(item.product.id),
+                }"
+                :style="{
+                  transform: `translateX(${frontOffset(item.product.id)}px)`,
+                  transition: dragId === item.product.id ? 'none' : undefined,
+                }"
+                role="button"
+                tabindex="0"
+                :aria-label="
+                  selectMode
+                    ? `${selectedIds.has(item.product.id) ? 'Deselect' : 'Select'} ${item.product.name}`
+                    : `Open ${item.product.name}`
+                "
+                @click="onRowClick(item.product)"
+                @keydown.enter.prevent="onRowTap(item.product)"
+                @keydown.space.prevent="onRowTap(item.product)"
+                @pointerdown="onRowPointerDown(item.product); onSwipeStart(item.product.id, $event)"
+                @pointerup="cancelLongPress(); onSwipeEnd(item.product.id)"
+                @pointercancel="cancelLongPress(); onSwipeEnd(item.product.id)"
+                @pointermove="cancelLongPress(); onSwipeMove(item.product.id, $event)"
               >
-                <Check v-if="selectedIds.has(item.product.id)" :size="12" />
-              </div>
-
-              <!-- Thumbnail -->
-              <div class="p-row__thumb" :style="{ '--thumb-c': thumbColor(item.product.categoryId) }">
-                <img
-                  v-if="item.product.imageUrl && !failedImages[item.product.id]"
-                  :src="item.product.imageUrl"
-                  :alt="item.product.name"
-                  loading="lazy"
-                  @error="failedImages[item.product.id] = true"
-                />
-                <span v-else class="p-row__initial">{{ thumbInitial(item.product.name) }}</span>
-              </div>
-
-              <!-- Body -->
-              <div class="p-row__body">
-                <p class="p-row__name">{{ item.product.name }}</p>
-                <div class="p-row__meta">
-                  <template v-if="item.product.stockQty !== undefined">
-                    <span
-                      v-if="item.product.stockQty === 0"
-                      class="p-row__badge p-row__badge--oos"
-                    >Out of stock</span>
-                    <span
-                      v-else-if="item.product.stockQty <= (item.product.lowStockThreshold ?? 5)"
-                      class="p-row__badge p-row__badge--low"
-                    >{{ item.product.stockQty }} left</span>
-                    <span v-else class="p-row__stock-count">{{ item.product.stockQty }} in stock</span>
-                  </template>
-                  <span v-else-if="item.product.outOfStock" class="p-row__badge p-row__badge--oos">Out of stock</span>
-                  <span v-if="item.product.sku" class="p-row__sku">{{ item.product.sku }}</span>
+                <!-- Select checkbox -->
+                <div
+                  v-if="selectMode"
+                  class="p-row__checkbox"
+                  :class="{ 'p-row__checkbox--on': selectedIds.has(item.product.id) }"
+                  aria-hidden="true"
+                >
+                  <Check v-if="selectedIds.has(item.product.id)" :size="12" />
                 </div>
+
+                <!-- Thumbnail -->
+                <div class="p-row__thumb" :style="{ '--thumb-c': thumbColor(item.product.categoryId) }">
+                  <img
+                    v-if="item.product.imageUrl && !failedImages[item.product.id]"
+                    :src="item.product.imageUrl"
+                    :alt="item.product.name"
+                    loading="lazy"
+                    @error="failedImages[item.product.id] = true"
+                  />
+                  <span v-else class="p-row__initial">{{ thumbInitial(item.product.name) }}</span>
+                </div>
+
+                <!-- Body -->
+                <div class="p-row__body">
+                  <p class="p-row__name">{{ item.product.name }}</p>
+                  <div class="p-row__meta">
+                    <span class="p-row__stock-status">
+                      <span class="p-row__dot" :class="stockDotClass(item.product)" aria-hidden="true" />
+                      <span>{{ stockLabel(item.product) }}</span>
+                    </span>
+                    <span v-if="item.product.sku" class="p-row__sku">{{ item.product.sku }}</span>
+                  </div>
+                </div>
+
+                <!-- Price + toggle, stacked so the name column keeps its width -->
+                <div class="p-row__end">
+                  <p class="p-row__price">
+                    {{ formatCurrency(item.product.priceCents) }}<span v-if="item.product.unitLabel" class="p-row__unit">{{ item.product.unitLabel }}</span>
+                  </p>
+
+                  <!-- Availability toggle (only when not tracking inventory) -->
+                  <div
+                    v-if="item.product.stockQty === undefined"
+                    class="p-row__toggle-wrap"
+                    @click.stop
+                    @keydown.stop
+                  >
+                    <ToggleSwitch
+                      :model-value="!item.product.outOfStock"
+                      :ariaLabel="`${item.product.name} available`"
+                      @update:model-value="toggleAvailability(item.product)"
+                    />
+                  </div>
+                </div>
+
+                <ChevronRight v-if="!selectMode" :size="16" class="p-row__chevron" aria-hidden="true" />
               </div>
 
-              <!-- Price -->
-              <p class="p-row__price">
-                {{ formatCurrency(item.product.priceCents) }}<span v-if="item.product.unitLabel" class="p-row__unit">{{ item.product.unitLabel }}</span>
-              </p>
-
-              <!-- Restock inline -->
+              <!-- Restock: swipe-revealed on mobile, static on desktop -->
               <div
                 v-if="item.product.stockQty !== undefined && !selectMode"
-                class="p-row__restock-wrap"
+                class="p-row__actions"
                 @click.stop
                 @keydown.stop
               >
-                <template v-if="restockingId === item.product.id">
-                  <input
-                    v-model.number="restockQty"
-                    class="p-row__restock-input"
-                    type="number"
-                    min="1"
-                    step="1"
-                    aria-label="Restock quantity"
-                    @keydown.enter.prevent="submitRestock(item.product.id, $event)"
-                    @keydown.escape.prevent="cancelRestock($event)"
-                  />
-                  <button class="segment-button p-row__restock-ok" type="button" @click="submitRestock(item.product.id, $event)">+Add</button>
-                  <button class="icon-button" type="button" aria-label="Cancel" @click="cancelRestock($event)"><X :size="14" /></button>
-                </template>
                 <button
-                  v-else
-                  class="segment-button p-row__restock-btn"
+                  class="p-row__restock-btn"
                   type="button"
                   aria-label="Restock"
-                  @click="openRestock(item.product.id, $event)"
+                  @click="submitRestock(item.product.id, $event)"
                 >Restock</button>
-              </div>
-
-              <!-- Availability toggle (only when not tracking inventory) -->
-              <div
-                v-if="item.product.stockQty === undefined"
-                class="p-row__toggle-wrap"
-                @click.stop
-                @keydown.stop
-              >
-                <ToggleSwitch
-                  :model-value="!item.product.outOfStock"
-                  :ariaLabel="`${item.product.name} available`"
-                  @update:model-value="toggleAvailability(item.product)"
-                />
               </div>
             </div>
           </template>

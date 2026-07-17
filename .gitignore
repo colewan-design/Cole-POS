@@ -2,6 +2,9 @@ node_modules/
 apps/web/node_modules/
 apps/web/dist/
 apps/web/.env
+apps/mobile/node_modules/
+apps/mobile/www/
 *.log
 .DS_Store
 .vercel/
+recordings/

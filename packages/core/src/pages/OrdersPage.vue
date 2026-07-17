@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
@@ -22,6 +23,21 @@ onMounted(() => {
     void store.initialize()
   }
 })
+
+const paymentFilterOptions: { value: 'all' | PaymentMethod; label: string }[] = [
+  { value: 'all',     label: 'All payments' },
+  { value: 'cash',    label: 'Cash' },
+  { value: 'card',    label: 'Card' },
+  { value: 'ewallet', label: 'E-wallet' },
+]
+
+const modeFilterOptions: { value: 'all' | BusinessMode; label: string }[] = [
+  { value: 'all',           label: 'All modes' },
+  { value: 'coffee-shop',   label: 'Coffee shop' },
+  { value: 'grocery',       label: 'Grocery store' },
+  { value: 'restaurant',    label: 'Restaurant' },
+  { value: 'nail-salon',    label: 'Nail salon' },
+]
 
 const range = ref<Range>('week')
 const searchQuery = ref('')
@@ -293,19 +309,18 @@ const rangeCaption = computed(() => {
               <X :size="14" />
             </button>
           </label>
-          <select v-model="paymentFilter" class="sheet-input orders-select" aria-label="Filter by payment method">
-            <option value="all">All payments</option>
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="ewallet">E-wallet</option>
-          </select>
-          <select v-model="modeFilter" class="sheet-input orders-select" aria-label="Filter by business mode">
-            <option value="all">All modes</option>
-            <option value="coffee-shop">Coffee shop</option>
-            <option value="grocery">Grocery store</option>
-            <option value="restaurant">Restaurant</option>
-            <option value="nail-salon">Nail salon</option>
-          </select>
+          <AutocompleteSelect
+            v-model="paymentFilter"
+            class="orders-select"
+            label="Filter by payment method"
+            :options="paymentFilterOptions"
+          />
+          <AutocompleteSelect
+            v-model="modeFilter"
+            class="orders-select"
+            label="Filter by business mode"
+            :options="modeFilterOptions"
+          />
         </div>
 
         <div v-if="filteredOrders.length === 0" class="orders-empty">
@@ -334,7 +349,7 @@ const rangeCaption = computed(() => {
         </div>
       </article>
 
-      <aside class="orders-detail">
+      <aside v-if="filteredOrders.length > 0" class="orders-detail">
         <template v-if="selectedOrder">
           <div class="orders-detail__head">
             <div>
@@ -404,6 +419,7 @@ const rangeCaption = computed(() => {
 <style scoped>
 .orders-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-4) 0 var(--space-8);
 }
@@ -583,6 +599,7 @@ const rangeCaption = computed(() => {
 }
 
 .orders-select {
+  width: 100%;
   min-width: 142px;
 }
 
@@ -739,7 +756,7 @@ const rangeCaption = computed(() => {
 
   .orders-grid,
   .orders-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .orders-detail {
@@ -749,7 +766,11 @@ const rangeCaption = computed(() => {
 
 @media (max-width: 760px) {
   .orders-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .orders-copy {
+    display: none;
   }
 
   .orders-range {
@@ -757,11 +778,15 @@ const rangeCaption = computed(() => {
   }
 
   .orders-kpis {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .orders-filters {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-search {
+    grid-column: 1 / -1;
   }
 
   .orders-select {

@@ -262,6 +262,7 @@ button {
 .shell-content,
 .page-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -353,7 +354,7 @@ button {
   display: grid;
   gap: var(--space-5);
   grid-template-columns: minmax(0, 2.3fr) minmax(320px, 1fr);
-  align-items: start;
+  align-items: stretch;
 }
 
 .register-page {
@@ -454,11 +455,58 @@ button {
   align-items: center;
   gap: var(--space-2);
   min-width: min(100%, 300px);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   min-height: 44px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: var(--fill);
   color: var(--text-secondary);
+}
+
+.reg-search-field {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  width: 100%;
+  padding: 6px 6px 6px var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.reg-search-field__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text-on);
+}
+
+/* Grocery mode's barcode-scan field — same pill treatment as .search-field */
+.barcode-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-4);
+  min-height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-tertiary);
+}
+
+.barcode-field input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+}
+
+.barcode-field input::placeholder {
+  color: var(--text-tertiary);
 }
 
 .search-field input,
@@ -527,6 +575,84 @@ button {
   color: var(--accent);
 }
 
+/* ── Register catalog category cards (icon-topped) ──────────────────────── */
+
+.reg-category-tabs {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-1);
+}
+
+.reg-category-tab {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 92px;
+  padding: var(--space-3) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: center;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.reg-category-tab__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-secondary);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.reg-category-tab__label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: var(--type-subhead);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.reg-category-tab__count {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.reg-category-tab.active {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.reg-category-tab.active .reg-category-tab__icon {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.reg-category-tab.active .reg-category-tab__label {
+  color: var(--accent);
+}
+
+.reg-category-tab:hover {
+  transform: scale(0.985);
+}
+
 .segment-button,
 .plain-danger,
 .numeric-keypad button,
@@ -545,6 +671,7 @@ button {
   border-radius: var(--radius-pill);
   background: var(--fill);
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .segment-button.active {
@@ -553,14 +680,29 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
+.reg-catalog-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 0 0 20px 20px;
+  overflow: hidden;
+}
+
 .product-grid {
   display: grid;
+  flex: 1;
+  min-height: 0;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: min-content;
   gap: var(--space-4);
+  overflow-y: auto;
+  align-content: start;
 }
 
 .product-card {
   display: grid;
+  min-width: 0;
   gap: 0;
   padding: 0;
   overflow: hidden;
@@ -632,32 +774,6 @@ button {
   box-shadow: var(--shadow-sm);
 }
 
-.product-card__add {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: 1;
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--accent-text-on);
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  transform: scale(0.7);
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-
-.product-card:hover .product-card__add,
-.product-card:focus-visible .product-card__add {
-  opacity: 1;
-  transform: scale(1);
-}
-
 .product-card__art img {
   width: 100%;
   height: 100%;
@@ -666,15 +782,8 @@ button {
 
 .product-card__meta {
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4) var(--space-4);
-}
-
-.product-card__eyebrow {
-  margin: 0;
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-  letter-spacing: 0.04em;
 }
 
 .product-card__name,
@@ -685,7 +794,33 @@ button {
   font-weight: 600;
 }
 
+.product-card__meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.product-card__tag {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  min-width: 0;
+  max-width: 60%;
+  padding: 2px 9px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--tag) 16%, var(--bg-elevated));
+  color: var(--tag);
+  font: var(--type-caption);
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .product-card__price {
+  flex: none;
   margin: 0;
   font: var(--type-headline);
   font-variant-numeric: tabular-nums;
@@ -694,14 +829,6 @@ button {
 .product-card__price span {
   color: var(--text-secondary);
   font: var(--type-caption);
-}
-
-.product-card__source {
-  width: fit-content;
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-  text-decoration: none;
-  pointer-events: none;
 }
 
 .order-line__meta,
@@ -722,11 +849,12 @@ button {
 }
 
 .order-panel {
-  position: sticky;
-  top: 104px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-5);
+  height: 100%;
+  overflow: hidden;
 }
 
 .order-badge {
@@ -748,17 +876,166 @@ button {
   gap: var(--space-3);
 }
 
+.order-panel__header-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.order-panel__customer {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  text-align: center;
+}
+
+.order-panel__customer-name {
+  overflow: hidden;
+  max-width: 100%;
+  font: var(--type-headline);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.order-panel__customer-name--placeholder {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.order-panel__order-number {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.order-panel__header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.order-panel__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.order-panel__fields--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.order-panel__footer {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.order-panel__promo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.order-panel__promo {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 160px;
+  min-height: 44px;
+  padding: 0 4px 0 var(--space-4);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+}
+
+.order-panel__promo input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+}
+
+.order-panel__promo input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.order-panel__promo-apply {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-secondary);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.order-panel__promo-apply:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--fill));
+  color: var(--accent);
+}
+
+.order-panel__payment-method {
+  flex: none;
+}
+
+.order-panel__tear {
+  height: 0;
+  margin: 0;
+  border: none;
+  border-top: 2px dashed var(--separator);
+}
+
 .segmented-control {
   display: grid;
   grid-auto-flow: column;
+  align-items: center;
   gap: var(--space-2);
   padding: 4px;
   border-radius: var(--radius-pill);
   background: var(--fill);
+  overflow-x: auto;
 }
 
 .order-lines {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent) transparent;
+}
+
+.order-lines::-webkit-scrollbar {
+  width: 6px;
+}
+
+.order-lines::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.order-lines::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+}
+
+.order-lines .empty-state {
+  margin: auto 0;
 }
 
 .history-list {
@@ -975,14 +1252,12 @@ button {
 /* ── Quick-cash denomination shortcuts ──────────────────────────────────── */
 
 .quick-cash {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 .quick-cash__btn {
-  flex: 1;
-  min-width: 0;
   min-height: 44px;
   padding: 0 var(--space-2);
   border: 0.5px solid var(--separator);
@@ -991,6 +1266,7 @@ button {
   color: var(--accent);
   font: var(--type-subhead);
   font-weight: 600;
+  white-space: nowrap;
   transition:
     background var(--dur-fast) var(--ease-out),
     transform var(--dur-fast) var(--ease-out);
@@ -1188,14 +1464,15 @@ button {
 .sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 50;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 0;
-  background: rgba(0, 0, 0, 0.32);
+  background: rgba(0, 0, 0, calc(0.32 * var(--sheet-backdrop-opacity, 1)));
   backdrop-filter: var(--material-bar);
   animation: sheet-fade var(--dur-base) var(--ease-out);
+  transition: background-color var(--dur-fast, 0.2s) var(--ease-out, ease);
 }
 
 .sheet-panel {
@@ -1212,6 +1489,12 @@ button {
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
   animation: sheet-up var(--dur-slow) var(--ease-spring);
+  transition: transform var(--dur-base, 0.25s) var(--ease-spring, ease);
+  will-change: transform;
+}
+
+.sheet-panel--dragging {
+  transition: none;
 }
 
 .sheet-scroll {
@@ -1221,12 +1504,36 @@ button {
   gap: var(--space-4);
 }
 
+.sheet-grabber-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet-grabber-handle:active {
+  cursor: grabbing;
+}
+
 .sheet-grabber {
   justify-self: center;
   width: 36px;
   height: 5px;
   border-radius: var(--radius-pill);
   background: var(--separator);
+  transition: background-color var(--dur-fast, 0.2s) var(--ease-out, ease), width var(--dur-fast, 0.2s) var(--ease-out, ease);
+}
+
+.sheet-grabber-handle:hover .sheet-grabber,
+.sheet-grabber-handle:active .sheet-grabber {
+  width: 44px;
+  background: var(--text-tertiary);
 }
 
 @keyframes sheet-fade {
@@ -1250,7 +1557,7 @@ button {
     border-radius: var(--radius-xl);
   }
 
-  .sheet-grabber {
+  .sheet-grabber-handle {
     display: none;
   }
 }
@@ -1447,13 +1754,13 @@ button {
 
 @media (max-width: 1100px) {
   .settings-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 880px) {
   .settings-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-nav {
@@ -1470,7 +1777,7 @@ button {
   }
 
   .settings-appearance-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1975,11 +2282,23 @@ button {
   .orders-summary,
   .register-layout,
   .history-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .order-panel {
     position: static;
+    height: auto;
+  }
+
+  .reg-catalog-panel {
+    flex: none;
+    height: auto;
+    margin: 0 20px 20px;
+    overflow: visible;
+  }
+
+  .product-grid {
+    overflow-y: visible;
   }
 }
 
@@ -2018,45 +2337,150 @@ button {
 
 .products-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-4) 0 var(--space-8);
 }
 
-.products-page__header {
+/* ── Large-title nav bar ────────────────────────────────────────────────── */
+/* --collapse (0→1) is driven by list scroll position; every transition below
+   uses the same iOS large-title easing so the bar reads as one interpolation
+   rather than a hard breakpoint swap. */
+
+.p-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  /* Always opaque (matches the page background) so that if this ever ends up
+     stuck over scrolled content — e.g. on a short viewport where the toolbar
+     stack below it needs to scroll — it can never show a transparent
+     double-exposure of whatever scrolled underneath it. */
+  background: var(--bg-base);
+}
+
+.p-navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--material-bar-bg);
+  backdrop-filter: var(--material-bar);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--separator) calc(var(--collapse, 0) * 100%), transparent);
+  opacity: var(--collapse, 0);
+  transition: opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.p-navbar__row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  min-height: 44px;
 }
 
-.products-page__titleblock {
+.p-navbar__small-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 600 17px/1.2 var(--font-sans);
+  color: var(--text-primary);
+  opacity: var(--collapse, 0);
+  transition: opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
+  pointer-events: none;
+}
+
+.p-navbar__trailing {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.p-navbar__large-wrap {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  max-height: calc(52px * (1 - var(--collapse, 0)));
+  opacity: calc(1 - var(--collapse, 0));
+  overflow: hidden;
+  transition:
+    max-height var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1),
+    opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.products-page__title {
-  margin: 0;
-  font: var(--type-title1);
+.p-navbar__large-title {
+  margin: var(--space-1) 0 0;
+  font: 700 34px/1.2 var(--font-sans);
+  color: var(--text-primary);
 }
 
-.products-page__count {
+.p-navbar__count {
   color: var(--text-tertiary);
   font: var(--type-subhead);
 }
 
-.products-page__add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
+/* ── Products / Categories segmented control ───────────────────────────── */
+
+.p-segctrl {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  height: 36px;
+  padding: 2px;
   border-radius: var(--radius-md);
-  height: 44px;
-  flex: none;
+  background: var(--fill);
+}
+
+.p-segctrl__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  height: calc(100% - 4px);
+  border-radius: calc(var(--radius-md) - 2px);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease-out;
+  will-change: transform;
+}
+
+.p-segctrl__option {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 0.8125rem/1 var(--font-sans);
+  transition: color 0.2s ease-out;
+}
+
+.p-segctrl__option--active {
+  color: var(--text-primary);
 }
 
 .products-page__mode-filter {
   width: fit-content;
+  max-width: 100%;
+  background: transparent;
+  padding: 0;
+  gap: var(--space-2);
+}
+
+.products-page__mode-filter .segment-button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.products-page__mode-filter .segment-button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text-on);
+  box-shadow: none;
 }
 
 /* ── Toolbar ────────────────────────────────────────────────────────────── */
@@ -2116,6 +2540,38 @@ button {
 .psearch__clear:hover {
   background: var(--separator);
   color: var(--text-primary);
+}
+
+/* ── Search row (fully-rounded field + slide-in Cancel) ─────────────────── */
+
+.p-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.products-page__search {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-pill);
+}
+
+.p-search-cancel {
+  flex: none;
+  max-width: 0;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: var(--type-subhead);
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width var(--dur-base) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+
+.p-search-cancel--visible {
+  max-width: 70px;
+  opacity: 1;
 }
 
 .ptoolbar__controls {
@@ -2223,7 +2679,9 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0;                                    /* override surface-panel */
-  height: clamp(280px, calc(100svh - 340px), 900px);
+  /* Budget accounts for the large-title nav bar + segmented control above it
+     (~170px) on top of the existing chips/search/sort toolbar stack. */
+  height: clamp(280px, calc(100svh - 460px), 900px);
   border-radius: var(--radius-xl);
 }
 
@@ -2295,26 +2753,54 @@ button {
   left: 0;
   right: 0;
   height: 68px;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Front carries all row content and slides left to reveal .p-row__actions on mobile.
+   flex:1 so it fills the row next to the (desktop-static / mobile-absolute) actions panel. */
+.p-row__front {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  height: 100%;
   padding: 0 var(--space-4);
-  border-bottom: 0.5px solid var(--separator);
+  /* Must be fully opaque (--bg-surface is a translucent material-bar token,
+     ~88% alpha in every theme) or the swipe action underneath bleeds through. */
+  background: var(--bg-elevated);
   cursor: pointer;
+  touch-action: pan-y;
   transition:
     background var(--dur-fast) var(--ease-out),
-    opacity var(--dur-fast) var(--ease-out);
+    opacity var(--dur-fast) var(--ease-out),
+    transform 220ms var(--ease-spring);
   -webkit-user-select: none;
   user-select: none;
 }
 
-.p-row:hover,
-.p-row:focus-visible {
+/* Inset hairline separator — aligned with the text start, not full-bleed */
+.p-row__front::after {
+  content: '';
+  position: absolute;
+  left: calc(44px + var(--space-3) + var(--space-4));
+  right: 0;
+  bottom: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+.p-row__front:hover,
+.p-row__front:focus-visible {
   background: var(--fill);
   outline: none;
 }
 
-.p-row:focus-visible {
+.p-row__front:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -2397,72 +2883,62 @@ button {
   gap: var(--space-2);
 }
 
-.p-row__badge {
+/* Stock status: colored dot + text, replacing the old boxed pill badges */
+.p-row__stock-status {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
   font: var(--type-caption);
+  color: var(--text-secondary);
 }
 
-.p-row__badge--oos {
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-  color: var(--warning);
+.p-row__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
 }
 
-.p-row__badge--low {
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-  color: var(--warning);
-}
-
-.p-row__stock-count {
-  font: var(--type-caption);
-  color: var(--text-tertiary);
-}
-
-.p-row__restock-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex-shrink: 0;
-}
-
-.p-row__restock-btn {
-  font-size: 12px;
-  padding: 0 var(--space-2);
-  height: 28px;
-}
-
-.p-row__restock-input {
-  width: 56px;
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  color-scheme: inherit;
-  text-align: center;
-  outline: none;
-}
-
-.p-row__restock-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-.p-row__restock-ok {
-  font-size: 12px;
-  padding: 0 var(--space-2);
-  height: 28px;
-}
+.p-row__dot--success { background: var(--success); }
+.p-row__dot--warning { background: var(--warning); }
+.p-row__dot--danger  { background: var(--danger); }
 
 .p-row__sku {
   color: var(--text-tertiary);
   font: var(--type-caption);
   font-variant-numeric: tabular-nums;
+}
+
+/* Price + toggle stack */
+.p-row__end {
+  flex: none;
+  display: grid;
+  justify-items: end;
+  gap: var(--space-1);
+}
+
+/* Tap-to-detail affordance */
+.p-row__chevron {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+/* Restock action: static on desktop, swipe-revealed panel on mobile */
+.p-row__actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.p-row__restock-btn {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-text-on);
+  font: var(--type-subhead);
+  font-weight: 600;
 }
 
 /* Price */
@@ -2738,7 +3214,7 @@ button {
 /* Collapse to single column on narrow viewports */
 @media (max-width: 600px) {
   .product-sheet__cols {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .product-sheet__col--right {
@@ -2796,20 +3272,42 @@ button {
 
 /* ── Products page — responsive ─────────────────────────────────────────── */
 
-@media (max-width: 480px) {
-  /* Collapse "Add product" text label to a "+" icon only */
-  .products-page__add-label {
-    display: none;
+@media (max-width: 720px) {
+  /* Front becomes an unambiguous full-cover overlay (not reliant on flex:1 to
+     fill the row) so it can never leave a sliver of .p-row__actions showing. */
+  .p-row__front {
+    position: absolute;
+    inset: 0;
   }
 
+  /* Actions live off-screen to the right, underneath front; swiping .p-row__front left reveals them. */
+  .p-row__actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    width: 96px;
+    align-items: stretch;
+  }
+
+  .p-row__restock-btn {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 480px) {
   /* Toolbar controls wrap more aggressively */
   .ptoolbar__controls {
     gap: var(--space-2);
   }
 
-  /* Tighter list height on phone */
+  /* Tighter list height on phone (still budgeted for navbar + segctrl above it) */
   .plist {
-    height: clamp(280px, calc(100svh - 300px), 700px);
+    height: clamp(280px, calc(100svh - 430px), 700px);
   }
 
   /* Slightly narrower price column */

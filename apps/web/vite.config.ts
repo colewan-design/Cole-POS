@@ -17,6 +17,16 @@ function entryRouteAliases(): Plugin {
 
     if (req.url?.startsWith('/app/')) {
       req.url = '/app.html'
+      return
+    }
+
+    if (req.url === '/store' || req.url?.startsWith('/store?')) {
+      req.url = req.url.replace('/store', '/store.html')
+      return
+    }
+
+    if (req.url?.startsWith('/store/')) {
+      req.url = '/store.html'
     }
   }
   return {
@@ -44,6 +54,7 @@ export default defineConfig({
       '@pos/core': path.resolve(__dirname, '../../packages/core/src'),
       '@pos/shared': path.resolve(__dirname, '../../packages/shared/src'),
       '@pos/data': path.resolve(__dirname, '../../packages/data/src'),
+      '@pos/web': path.resolve(__dirname, 'src'),
     },
   },
   build: {
@@ -52,6 +63,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         app: path.resolve(__dirname, 'app.html'),
         landing: path.resolve(__dirname, 'landing.html'),
+        store: path.resolve(__dirname, 'store.html'),
       },
     },
   },

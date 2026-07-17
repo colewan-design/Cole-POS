@@ -98,6 +98,7 @@ const latestEvent = computed(() => store.appEvents[0] ?? null)
 <style scoped>
 .diag-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding-bottom: var(--space-10);
 }

@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/haptics": "^8.0.0",
     "@lucide/vue": "^1.21.0",
     "firebase": "^11.0.0",
     "pinia": "^3.0.3",

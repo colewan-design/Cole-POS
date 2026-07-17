@@ -242,7 +242,7 @@ const peakSalesIndex = computed(() => {
       peak = i
     }
   }
-  return peak
+  return salesSeries.value[peak]?.totalCents > 0 ? peak : -1
 })
 
 const salesLabelStep = computed(() => Math.max(1, Math.ceil(salesSeries.value.length / 8)))
@@ -378,7 +378,8 @@ const recentOrders = computed(() =>
             <span>Total revenue</span>
             <strong>{{ formatCurrency(totalRevenue) }}</strong>
           </div>
-          <div class="dashboard-channels__list">
+          <p v-if="channelBreakdown.length === 0" class="dashboard-empty">No sales recorded for this period yet.</p>
+          <div v-else class="dashboard-channels__list">
             <div v-for="segment in channelBreakdown" :key="segment.label" class="dashboard-channels__row">
               <div class="dashboard-channels__row-head">
                 <span class="dashboard-channels__label">
@@ -405,7 +406,8 @@ const recentOrders = computed(() =>
             <ChevronRight :size="14" />
           </RouterLink>
         </div>
-        <table class="dashboard-table">
+        <p v-if="topProducts.length === 0" class="dashboard-empty">No products sold for this period yet.</p>
+        <table v-else class="dashboard-table">
           <thead>
             <tr>
               <th>Product</th>
@@ -438,7 +440,8 @@ const recentOrders = computed(() =>
             <ChevronRight :size="14" />
           </RouterLink>
         </div>
-        <table class="dashboard-table">
+        <p v-if="recentOrders.length === 0" class="dashboard-empty">No orders placed for this period yet.</p>
+        <table v-else class="dashboard-table">
           <thead>
             <tr>
               <th>Order ID</th>
@@ -468,6 +471,7 @@ const recentOrders = computed(() =>
 <style scoped>
 .dashboard-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -523,7 +527,8 @@ const recentOrders = computed(() =>
   padding: 0 var(--space-4);
   border: 1px solid var(--separator);
   border-radius: 14px;
-  background: white;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -534,7 +539,7 @@ const recentOrders = computed(() =>
 }
 
 .dashboard-grid {
-  grid-template-columns: 1.65fr 1fr;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
 }
 
 .dashboard-grid--tables {
@@ -559,12 +564,13 @@ const recentOrders = computed(() =>
 
 .dashboard-bar-chart {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
 .dashboard-bar-chart__plot {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-3);
   height: 260px;
 }
@@ -730,6 +736,14 @@ const recentOrders = computed(() =>
   text-decoration: none;
 }
 
+.dashboard-empty {
+  margin: 0;
+  padding: var(--space-5) 0;
+  color: var(--text-tertiary);
+  font: var(--type-subhead);
+  text-align: center;
+}
+
 .dashboard-table {
   width: 100%;
   border-collapse: collapse;
@@ -808,7 +822,7 @@ const recentOrders = computed(() =>
   }
 
   .dashboard-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-range {
@@ -817,10 +831,13 @@ const recentOrders = computed(() =>
 }
 
 @media (max-width: 720px) {
-  .dashboard-kpis,
+  .dashboard-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .dashboard-grid,
   .dashboard-grid--tables {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-toolbar {
@@ -831,6 +848,10 @@ const recentOrders = computed(() =>
   .dashboard-table {
     display: block;
     overflow-x: auto;
+  }
+
+  .dashboard-copy {
+    display: none;
   }
 }
 </style>

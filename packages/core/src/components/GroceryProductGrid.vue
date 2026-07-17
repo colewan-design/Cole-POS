@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { Barcode, Plus, Scale, ShoppingBasket } from '@lucide/vue'
+import { Barcode, Cookie, LayoutGrid, Leaf, Milk, Scale, ShoppingBasket } from '@lucide/vue'
 import { computed, reactive } from 'vue'
-import { formatCurrency } from '@pos/shared/index'
+import { categoryTagVar, formatCurrency } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
+import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 
 const store = usePosStore()
+
+function selectCategory(categoryId: string) {
+  store.setCategory(categoryId)
+  haptic(ImpactStyle.Light)
+}
 
 const modeProducts = computed(() =>
   store.products.filter((product) => product.businessModes.includes(store.settings.businessMode)),
@@ -50,10 +56,43 @@ const failedImages = reactive<Record<string, boolean>>({})
 function markImageFailed(productId: string) {
   failedImages[productId] = true
 }
+
+const categoryIcons: Record<string, typeof ShoppingBasket> = {
+  all: LayoutGrid,
+  groceries: ShoppingBasket,
+  produce: Leaf,
+  dairy: Milk,
+  snacks: Cookie,
+}
+
+function iconFor(categoryId: string) {
+  return categoryIcons[categoryId] ?? ShoppingBasket
+}
+
+function categoryNameFor(categoryId: string) {
+  return store.categories.find((category) => category.id === categoryId)?.name ?? categoryId
+}
 </script>
 
 <template>
-  <section class="surface-panel">
+  <section class="surface-panel reg-catalog-panel">
+    <div class="reg-category-tabs">
+      <button
+        v-for="category in visibleCategories"
+        :key="category.id"
+        class="reg-category-tab"
+        :class="{ active: store.selectedCategoryId === category.id }"
+        type="button"
+        @click="selectCategory(category.id)"
+      >
+        <span class="reg-category-tab__icon">
+          <component :is="iconFor(category.id)" :size="20" />
+        </span>
+        <span class="reg-category-tab__label">{{ category.name }}</span>
+        <span class="reg-category-tab__count">{{ countFor(category.id) }} Items</span>
+      </button>
+    </div>
+
     <label class="barcode-field">
       <Barcode :size="20" />
       <input
@@ -63,20 +102,6 @@ function markImageFailed(productId: string) {
         @input="store.setSearch(($event.target as HTMLInputElement).value)"
       />
     </label>
-
-    <div class="category-tabs">
-      <button
-        v-for="category in visibleCategories"
-        :key="category.id"
-        class="category-tab"
-        :class="{ active: store.selectedCategoryId === category.id }"
-        type="button"
-        @click="store.setCategory(category.id)"
-      >
-        {{ category.name }}
-        <span class="category-tab__count">{{ countFor(category.id) }}</span>
-      </button>
-    </div>
 
     <div class="product-grid">
       <button
@@ -89,7 +114,6 @@ function markImageFailed(productId: string) {
       >
         <div class="product-card__art grocery-art">
           <span v-if="quantityFor(product.id) > 0" class="product-card__qty">{{ quantityFor(product.id) }}</span>
-          <span class="product-card__add" aria-hidden="true"><Plus :size="16" /></span>
           <img
             v-if="product.imageUrl && !failedImages[product.id]"
             :src="product.imageUrl"
@@ -97,17 +121,22 @@ function markImageFailed(productId: string) {
             loading="lazy"
             @error="markImageFailed(product.id)"
           />
-          <ShoppingBasket v-else :size="32" />
+          <component :is="iconFor(product.categoryId)" v-else :size="32" />
           <span v-if="product.kind === 'weighted'" class="product-card__badge">
             <Scale :size="14" />
           </span>
         </div>
         <div class="product-card__meta grocery-meta">
           <p class="product-card__name">{{ product.name }}</p>
-          <p class="product-card__price">
-            {{ formatCurrency(product.priceCents) }}
-            <span v-if="product.unitLabel">{{ product.unitLabel }}</span>
-          </p>
+          <div class="product-card__meta-row">
+            <span class="product-card__tag" :style="{ '--tag': categoryTagVar(product.categoryId) }">
+              {{ categoryNameFor(product.categoryId) }}
+            </span>
+            <p class="product-card__price">
+              {{ formatCurrency(product.priceCents) }}
+              <span v-if="product.unitLabel">{{ product.unitLabel }}</span>
+            </p>
+          </div>
         </div>
       </button>
     </div>

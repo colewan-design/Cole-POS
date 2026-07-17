@@ -12,11 +12,14 @@ import {
   type CreateCategoryInput,
   type CreateCustomerInput,
   type CreateProductInput,
+  type CreateTableInput,
   type Customer,
+  type OrderStatus,
   type OrderSummary,
   type OrderType,
   type PaymentMethod,
   type Product,
+  type RestaurantTable,
   type ShiftSummary,
 } from '@pos/shared/index'
 
@@ -26,7 +29,13 @@ export const usePosStore = defineStore('pos', () => {
   const products = ref<Product[]>([])
   const categories = ref<{ id: string; name: string }[]>([])
   const customers = ref<Customer[]>([])
+  const tables = ref<RestaurantTable[]>([])
   const orders = ref<OrderSummary[]>([])
+  // Orders placed through the public storefront, written directly to Firestore
+  // by the createOnlineOrder Cloud Function — kept separate from `orders`
+  // (this device's own locally-owned sales) so an unpaid online order can
+  // never be double-counted in local shift/sales totals.
+  const onlineOrders = ref<OrderSummary[]>([])
   const appEvents = ref<AppEvent[]>([])
   const settings = ref<AppSettings>(defaultSettings)
   const activeShift = ref<ShiftSummary | null>(null)
@@ -35,6 +44,7 @@ export const usePosStore = defineStore('pos', () => {
   const selectedCategoryId = ref('all')
   const paymentMethod = ref<PaymentMethod>('cash')
   const orderType = ref<OrderType>('takeaway')
+  const tableNumber = ref('')
   const selectedCustomerId = ref<string | null>(null)
   const tenderedCents = ref(0)
   const tenderedInput = ref('')
@@ -117,6 +127,10 @@ export const usePosStore = defineStore('pos', () => {
     customers.value.find((customer) => customer.id === selectedCustomerId.value) ?? null,
   )
   const selectedCustomerName = computed(() => selectedCustomer.value?.name ?? guestCustomerName)
+  const customerOptions = computed(() => [
+    { value: '', label: guestCustomerName },
+    ...customers.value.map((customer) => ({ value: customer.id, label: customer.name })),
+  ])
 
   const lowStockProducts = computed(() =>
     products.value.filter((p) => {
@@ -130,24 +144,55 @@ export const usePosStore = defineStore('pos', () => {
     products.value.filter((p) => p.stockQty !== undefined && p.stockQty === 0),
   )
 
-  async function initialize() {
-    const [catalog, savedCustomers, savedOrders, savedSettings, savedEvents, savedShift] = await Promise.all([
+  function resetTransientState() {
+    search.value = ''
+    selectedCategoryId.value = 'all'
+    paymentMethod.value = 'cash'
+    orderType.value = 'takeaway'
+    tableNumber.value = ''
+    selectedCustomerId.value = null
+    tenderedCents.value = 0
+    tenderedInput.value = ''
+    cart.value = {}
+    lastCompletedOrder.value = null
+    lowStockAlert.value = []
+    shiftError.value = ''
+  }
+
+  async function initialize(force = false) {
+    if (isReady.value && !force) {
+      return
+    }
+
+    if (force) {
+      resetTransientState()
+    }
+
+    const [catalog, savedCustomers, savedTables, savedOrders, savedSettings, savedEvents, savedShift, savedOnlineOrders] = await Promise.all([
       repository.loadCatalog(),
       repository.loadCustomers(),
+      repository.loadTables(),
       repository.loadOrders(),
       repository.loadSettings(),
       repository.loadAppEvents(),
       repository.loadActiveShift(),
+      repository.loadOnlineOrders(),
     ])
 
     products.value = catalog.products
     categories.value = catalog.categories
     customers.value = savedCustomers
+    tables.value = savedTables
     orders.value = savedOrders
     settings.value = savedSettings
     appEvents.value = savedEvents
     activeShift.value = savedShift
+    onlineOrders.value = savedOnlineOrders
     isReady.value = true
+  }
+
+  async function refreshOnlineOrders() {
+    onlineOrders.value = await repository.loadOnlineOrders()
   }
 
   function clearShiftError() {
@@ -292,6 +337,10 @@ export const usePosStore = defineStore('pos', () => {
     orderType.value = value
   }
 
+  function setTableNumber(value: string) {
+    tableNumber.value = value
+  }
+
   function setSelectedCustomer(value: string | null) {
     selectedCustomerId.value = value
   }
@@ -359,6 +408,26 @@ export const usePosStore = defineStore('pos', () => {
     }
   }
 
+  async function createTable(input: CreateTableInput) {
+    const table = await repository.saveTable(input)
+    tables.value = [...tables.value, table]
+    return table
+  }
+
+  async function editTable(table: RestaurantTable) {
+    const nextTable = await repository.updateTable(table)
+    const index = tables.value.findIndex((entry) => entry.id === nextTable.id)
+    if (index !== -1) {
+      tables.value[index] = nextTable
+    }
+    return nextTable
+  }
+
+  async function removeTable(id: string) {
+    await repository.deleteTable(id)
+    tables.value = tables.value.filter((table) => table.id !== id)
+  }
+
   async function editProduct(product: Product) {
     await repository.updateProduct(product)
     const index = products.value.findIndex((p) => p.id === product.id)
@@ -412,6 +481,7 @@ export const usePosStore = defineStore('pos', () => {
       customerId: selectedCustomer.value?.id ?? null,
       customerName: selectedCustomerName.value,
       orderType: orderType.value,
+      tableNumber: settings.value.businessMode === 'restaurant' ? tableNumber.value.trim() || null : null,
       paymentMethod: paymentMethod.value,
       tenderedCents: paymentMethod.value === 'cash' ? tenderedCents.value : totalCents.value,
       items: cartLines.value.map((line) => ({
@@ -477,7 +547,32 @@ export const usePosStore = defineStore('pos', () => {
     selectedCustomerId.value = null
     tenderedInput.value = ''
     tenderedCents.value = 0
+    tableNumber.value = ''
     shiftError.value = ''
+  }
+
+  async function updateOrderStatus(orderId: string, status: OrderStatus) {
+    const updated = await repository.updateOrderStatus(orderId, status)
+    const index = orders.value.findIndex((order) => order.id === orderId)
+    if (index !== -1) {
+      orders.value[index] = updated
+    }
+    return updated
+  }
+
+  // Settles payment on an online order a customer already placed through the
+  // storefront — distinct from completeOrder(), which creates a brand-new
+  // (already-paid) order from the live cart.
+  async function settleOnlineOrderPayment(
+    orderId: string,
+    payment: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+  ) {
+    const updated = await repository.settleOrderPayment(orderId, payment)
+    const index = onlineOrders.value.findIndex((order) => order.id === orderId)
+    if (index !== -1) {
+      onlineOrders.value[index] = updated
+    }
+    return updated
   }
 
   function clearLowStockAlert() {
@@ -539,7 +634,9 @@ export const usePosStore = defineStore('pos', () => {
     products,
     categories,
     customers,
+    tables,
     orders,
+    onlineOrders,
     appEvents,
     pendingAppEvents,
     settings,
@@ -549,9 +646,11 @@ export const usePosStore = defineStore('pos', () => {
     selectedCategoryId,
     paymentMethod,
     orderType,
+    tableNumber,
     selectedCustomerId,
     selectedCustomer,
     selectedCustomerName,
+    customerOptions,
     tenderedCents,
     tenderedInput,
     lastCompletedOrder,
@@ -584,10 +683,14 @@ export const usePosStore = defineStore('pos', () => {
     setCategory,
     setPaymentMethod,
     setOrderType,
+    setTableNumber,
     setSelectedCustomer,
     notePaymentSheetOpened,
     updateSettings,
     completeOrder,
+    updateOrderStatus,
+    refreshOnlineOrders,
+    settleOnlineOrderPayment,
     clearLowStockAlert,
     restockProduct,
     refreshActiveShift,
@@ -601,6 +704,9 @@ export const usePosStore = defineStore('pos', () => {
     createCustomer,
     editCustomer,
     removeCustomer,
+    createTable,
+    editTable,
+    removeTable,
     createCategory,
     editCategory,
     removeCategory,

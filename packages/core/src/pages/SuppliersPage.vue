@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, ClipboardList, Package, Search, Truck, X } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import { usePosStore } from '@pos/core/stores/pos'
@@ -13,6 +14,12 @@ onMounted(() => {
     void store.initialize()
   }
 })
+
+const riskFilterOptions: { value: 'all' | 'low' | 'oos'; label: string }[] = [
+  { value: 'all', label: 'All risks' },
+  { value: 'oos', label: 'Out of stock' },
+  { value: 'low', label: 'Low stock' },
+]
 
 const searchQuery = ref('')
 const riskFilter = ref<'all' | 'low' | 'oos'>('all')
@@ -92,6 +99,11 @@ const supplierProfiles = computed(() => {
     } satisfies SupplierProfile
   })
 })
+
+const supplierFilterOptions = computed(() => [
+  { value: 'all', label: 'All suppliers' },
+  ...supplierProfiles.value.map((supplier) => ({ value: supplier.id, label: supplier.name })),
+])
 
 const reorderRows = computed(() => {
   return store.products
@@ -274,18 +286,19 @@ async function submitRestock(productId: string) {
             <input v-model="searchQuery" type="search" placeholder="Search item, supplier, category, or SKU" />
           </label>
 
-          <select v-model="riskFilter" class="sheet-input suppliers-select" aria-label="Filter by stock risk">
-            <option value="all">All risks</option>
-            <option value="oos">Out of stock</option>
-            <option value="low">Low stock</option>
-          </select>
+          <AutocompleteSelect
+            v-model="riskFilter"
+            class="suppliers-select"
+            label="Filter by stock risk"
+            :options="riskFilterOptions"
+          />
 
-          <select v-model="supplierFilter" class="sheet-input suppliers-select" aria-label="Filter by supplier">
-            <option value="all">All suppliers</option>
-            <option v-for="supplier in supplierProfiles" :key="supplier.id" :value="supplier.id">
-              {{ supplier.name }}
-            </option>
-          </select>
+          <AutocompleteSelect
+            v-model="supplierFilter"
+            class="suppliers-select"
+            label="Filter by supplier"
+            :options="supplierFilterOptions"
+          />
         </div>
       </div>
 
@@ -367,6 +380,7 @@ async function submitRestock(productId: string) {
 <style scoped>
 .suppliers-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -555,6 +569,7 @@ async function submitRestock(productId: string) {
 }
 
 .suppliers-select {
+  width: 100%;
   min-width: 160px;
 }
 
@@ -655,7 +670,7 @@ async function submitRestock(productId: string) {
 @media (max-width: 720px) {
   .suppliers-kpis,
   .suppliers-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .suppliers-filters,

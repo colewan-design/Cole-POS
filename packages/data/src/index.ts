@@ -17,9 +17,13 @@ import {
   type CreateCategoryInput,
   type CreateOrderInput,
   type CreateProductInput,
+  type CreateTableInput,
   type Customer,
+  type OrderStatus,
   type OrderSummary,
+  type PaymentMethod,
   type Product,
+  type RestaurantTable,
   type RoleDefinition,
   type ShiftSummary,
   type UserAccount,
@@ -45,9 +49,19 @@ export interface PosRepository {
   loadActiveShift(): Promise<ShiftSummary | null>
   loadShiftHistory(): Promise<ShiftSummary[]>
   saveOrder(input: CreateOrderInput): Promise<OrderSummary>
+  updateOrderStatus(orderId: string, status: OrderStatus): Promise<OrderSummary>
+  loadOnlineOrders(): Promise<OrderSummary[]>
+  settleOrderPayment(
+    orderId: string,
+    input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+  ): Promise<OrderSummary>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
   deleteCustomer(id: string): Promise<void>
+  loadTables(): Promise<RestaurantTable[]>
+  saveTable(input: CreateTableInput): Promise<RestaurantTable>
+  updateTable(table: RestaurantTable): Promise<RestaurantTable>
+  deleteTable(id: string): Promise<void>
   openShift(input: {
     openingCashCents: number
     userId?: string | null
@@ -189,6 +203,7 @@ const storageKeys = {
   products: 'pos.products',
   categories: 'pos.categories',
   customers: 'pos.customers',
+  tables: 'pos.tables',
   users: 'pos.users',
   roles: 'pos.roles',
   session: 'pos.session',
@@ -198,6 +213,8 @@ const storageKeys = {
   syncCursor: 'pos.sync.cursor',
   syncOutbox: 'pos.sync.outbox',
 } as const
+
+const guestSessionUserId = '__guest__'
 
 class BrowserLocalStore implements DataStore {
   async read<T>(key: string, fallback: T): Promise<T> {
@@ -251,8 +268,14 @@ class BrowserIndexedDbStore implements DataStore {
       await this.putValue(key, value)
     } catch {
       this.failed = true
-      await this.fallbackStore.write(key, value)
     }
+
+    // Always mirror into localStorage too, not just on failure. If IndexedDB is later
+    // reset or evicted by the browser, migrateFromLocalStorage() re-seeds from whatever
+    // localStorage holds — that must be kept current, or a reset resurrects a snapshot
+    // frozen at whatever this key held before IndexedDB became the primary store (e.g.
+    // a shift that has since been closed).
+    await this.fallbackStore.write(key, value)
   }
 
   private async ensureReady() {
@@ -491,27 +514,39 @@ function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[
 
   let stockPatched = false
   let imagePatched = false
+  let attributionRemoved = false
   const patchedProducts = storedProducts.map((p) => {
     const demo = demoProductMap.get(p.id)
     if (!demo) {
-      return p
+      if (!('imageAttributionUrl' in p)) {
+        return p
+      }
+
+      attributionRemoved = true
+      const { imageAttributionUrl: _imageAttributionUrl, ...rest } = p as Product & { imageAttributionUrl?: string }
+      return rest
     }
 
-    let patched = p
+    let patched = p as Product & { imageAttributionUrl?: string }
     if (p.stockQty === undefined && demo.stockQty !== undefined) {
       stockPatched = true
       patched = { ...patched, stockQty: demo.stockQty, lowStockThreshold: demo.lowStockThreshold }
     }
     if (!patched.imageUrl && demo.imageUrl) {
       imagePatched = true
-      patched = { ...patched, imageUrl: demo.imageUrl, imageAttributionUrl: demo.imageAttributionUrl }
+      patched = { ...patched, imageUrl: demo.imageUrl }
+    }
+    if ('imageAttributionUrl' in patched) {
+      attributionRemoved = true
+      const { imageAttributionUrl: _imageAttributionUrl, ...rest } = patched
+      patched = rest
     }
     return patched
   })
 
   const storedProductIds = new Set(storedProducts.map((product) => product.id))
   const newDemoProducts = demoProducts.filter((product) => !storedProductIds.has(product.id))
-  const productsChanged = newDemoProducts.length > 0 || stockPatched || imagePatched
+  const productsChanged = newDemoProducts.length > 0 || stockPatched || imagePatched || attributionRemoved
   const mergedProducts = productsChanged
     ? [...patchedProducts, ...newDemoProducts]
     : storedProducts
@@ -626,8 +661,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
   async function readActiveShift() {
     const shift = await store.read<ShiftSummary | null>(storageKeys.activeShift, null)
-    if (!shift) {
-      return shift
+    // A shift with closedAt set has already been closed — never surface it as the active
+    // shift, even if a stale copy lingers under the activeShift cache key (e.g. re-seeded
+    // from a mirrored snapshot that predates the close).
+    if (!shift || shift.closedAt) {
+      return null
     }
     // Shifts opened before totalSalesCents/orderCount existed are missing these fields in
     // storage — back-fill totalSalesCents from the cash figure we do have, rather than showing NaN.
@@ -1092,6 +1130,22 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
   }
 
+  function normalizeTable(input: Partial<RestaurantTable> & Pick<RestaurantTable, 'id' | 'floor' | 'label' | 'capacity'>): RestaurantTable {
+    const timestamp = new Date().toISOString()
+    return {
+      id: input.id,
+      floor: input.floor.trim(),
+      label: input.label.trim(),
+      capacity: input.capacity,
+      status: input.status ?? 'available',
+      guestName: input.guestName?.trim() || null,
+      guestCount: input.guestCount ?? null,
+      seatedAt: input.seatedAt ?? null,
+      createdAt: input.createdAt ?? timestamp,
+      updatedAt: input.updatedAt ?? timestamp,
+    }
+  }
+
   function normalizeOrder(order: OrderSummary): OrderSummary {
     return {
       ...order,
@@ -1101,6 +1155,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         'customerName' in order && typeof order.customerName === 'string' && order.customerName.trim()
           ? order.customerName.trim()
           : guestCustomerName,
+      tableNumber: 'tableNumber' in order ? order.tableNumber ?? null : null,
+      // Orders saved before status tracking existed have already been fulfilled — treat them as done
+      // rather than surfacing them as freshly "preparing" in the Track Order panel.
+      status: order.status ?? 'served',
     }
   }
 
@@ -1137,6 +1195,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         .map((customer) => normalizeCustomer(customer))
         .filter((customer) => customer.name.length > 0)
         .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+    },
+
+    async loadTables() {
+      const tables = await store.read<RestaurantTable[]>(storageKeys.tables, [])
+      return tables.map((table) => normalizeTable(table))
     },
 
     async loadActiveShift() {
@@ -1188,6 +1251,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         customerId: input.customerId ?? null,
         customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
+        tableNumber: input.tableNumber?.trim() || null,
+        status: 'preparing',
         paymentMethod: input.paymentMethod,
         subtotalCents,
         taxCents,
@@ -1212,6 +1277,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
             id: order.id,
             ticketNumber: order.ticketNumber,
             orderType: order.orderType,
+            tableNumber: order.tableNumber,
+            status: order.status,
             paymentStatus: 'paid',
             subtotalCents: order.subtotalCents,
             taxCents: order.taxCents,
@@ -1259,6 +1326,50 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       })
 
       return order
+    },
+
+    async updateOrderStatus(orderId, status) {
+      const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
+      const index = orders.findIndex((entry) => entry.id === orderId)
+      if (index === -1) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+
+      const updated = normalizeOrder({ ...orders[index], status })
+      const next = orders.slice()
+      next[index] = updated
+      await store.write(storageKeys.orders, next)
+      return updated
+    },
+
+    // Online orders are written directly to Firestore by the createOnlineOrder
+    // Cloud Function, not by this device — unlike in-person sales, they aren't
+    // in the local cache/outbox, so they need their own pull. Requires online
+    // sync; a local-only store has no storefront to receive orders from.
+    async loadOnlineOrders() {
+      if (!firebaseSync || !(await isOnlineSyncEnabled())) {
+        return []
+      }
+
+      const session = await getFirebaseSession()
+      if (!session) {
+        return []
+      }
+
+      return firebaseSync.pullOnlineOrders(session.storeId)
+    },
+
+    async settleOrderPayment(orderId, input) {
+      if (!firebaseSync) {
+        throw new Error('Settling an online order requires online sync to be enabled.')
+      }
+
+      const session = await getFirebaseSession()
+      if (!session) {
+        throw new Error('Settling an online order requires an active Firebase session.')
+      }
+
+      return firebaseSync.settleOrderPayment(session.storeId, orderId, input)
     },
 
     async saveCustomer(input) {
@@ -1310,6 +1421,48 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       await store.write(
         storageKeys.customers,
         customers.filter((customer) => customer.id !== id),
+      )
+    },
+
+    async saveTable(input) {
+      const timestamp = new Date().toISOString()
+      const table = normalizeTable({
+        id: crypto.randomUUID(),
+        floor: input.floor,
+        label: input.label,
+        capacity: input.capacity,
+        status: 'available',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+
+      const tables = await store.read<RestaurantTable[]>(storageKeys.tables, [])
+      await store.write(storageKeys.tables, [...tables, table])
+      return table
+    },
+
+    async updateTable(table) {
+      const tables = await store.read<RestaurantTable[]>(storageKeys.tables, [])
+      const existing = tables.find((entry) => entry.id === table.id)
+      const nextTable = normalizeTable({
+        ...table,
+        createdAt: existing?.createdAt ?? table.createdAt,
+        updatedAt: new Date().toISOString(),
+      })
+
+      await store.write(
+        storageKeys.tables,
+        tables.map((entry) => (entry.id === nextTable.id ? nextTable : entry)),
+      )
+
+      return nextTable
+    },
+
+    async deleteTable(id) {
+      const tables = await store.read<RestaurantTable[]>(storageKeys.tables, [])
+      await store.write(
+        storageKeys.tables,
+        tables.filter((table) => table.id !== id),
       )
     },
 
@@ -1776,6 +1929,17 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async saveSession(session) {
       await store.write(storageKeys.session, session)
+
+      if (!session || session.userId === guestSessionUserId) {
+        await writeFirebaseSession(null)
+        if (firebaseSync) {
+          try {
+            await firebaseSync.signOut()
+          } catch {
+            // Clearing the local session is the priority even if Firebase sign-out fails.
+          }
+        }
+      }
     },
 
     async loadAppEvents() {

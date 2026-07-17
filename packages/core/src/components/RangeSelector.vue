@@ -30,11 +30,14 @@ const OPTIONS: { value: Range; label: string }[] = [
 
 <style scoped>
 .range-selector {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: 4px;
   border-radius: var(--radius-pill);
   background: var(--fill);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .range-btn {

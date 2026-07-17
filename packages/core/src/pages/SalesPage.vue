@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowRight, CreditCard, Search, Wallet } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
@@ -14,6 +15,21 @@ onMounted(() => {
     void store.initialize()
   }
 })
+
+const paymentFilterOptions: { value: 'all' | 'cash' | 'card' | 'ewallet'; label: string }[] = [
+  { value: 'all',     label: 'All payments' },
+  { value: 'cash',    label: 'Cash' },
+  { value: 'card',    label: 'Card' },
+  { value: 'ewallet', label: 'E-wallet' },
+]
+
+const modeFilterOptions: { value: 'all' | 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'; label: string }[] = [
+  { value: 'all',         label: 'All modes' },
+  { value: 'coffee-shop', label: 'Coffee shop' },
+  { value: 'grocery',     label: 'Grocery' },
+  { value: 'restaurant',  label: 'Restaurant' },
+  { value: 'nail-salon',  label: 'Nail salon' },
+]
 
 const range = ref<Range>('week')
 const paymentFilter = ref<'all' | 'cash' | 'card' | 'ewallet'>('all')
@@ -318,20 +334,19 @@ const rangeCaption = computed(() => {
               <input v-model="searchQuery" type="search" placeholder="Search ticket, item, or payment method" />
             </label>
 
-            <select v-model="paymentFilter" class="sheet-input sales-select" aria-label="Filter by payment method">
-              <option value="all">All payments</option>
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="ewallet">E-wallet</option>
-            </select>
+            <AutocompleteSelect
+              v-model="paymentFilter"
+              class="sales-select"
+              label="Filter by payment method"
+              :options="paymentFilterOptions"
+            />
 
-            <select v-model="modeFilter" class="sheet-input sales-select" aria-label="Filter by business mode">
-              <option value="all">All modes</option>
-              <option value="coffee-shop">Coffee shop</option>
-              <option value="grocery">Grocery</option>
-              <option value="restaurant">Restaurant</option>
-              <option value="nail-salon">Nail salon</option>
-            </select>
+            <AutocompleteSelect
+              v-model="modeFilter"
+              class="sales-select"
+              label="Filter by business mode"
+              :options="modeFilterOptions"
+            />
           </div>
         </div>
 
@@ -367,6 +382,7 @@ const rangeCaption = computed(() => {
 <style scoped>
 .sales-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
 }
 
@@ -549,6 +565,7 @@ const rangeCaption = computed(() => {
 }
 
 .sales-select {
+  width: 100%;
   min-width: 150px;
 }
 
@@ -591,7 +608,7 @@ const rangeCaption = computed(() => {
   .sales-kpis,
   .sales-grid,
   .sales-grid--bottom {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sales-range {
@@ -600,12 +617,34 @@ const rangeCaption = computed(() => {
 }
 
 @media (max-width: 720px) {
+  .sales-copy {
+    display: none;
+  }
+
+  .sales-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sales-table__head,
-  .sales-filters,
   .sales-ticket__main,
   .sales-ticket__meta {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .sales-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sales-search,
+  .sales-select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sales-search {
+    grid-column: 1 / -1;
   }
 }
 </style>

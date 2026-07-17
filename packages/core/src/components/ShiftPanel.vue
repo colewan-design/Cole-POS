@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Landmark, MinusCircle, PlusCircle, Wallet } from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Calendar, Clock, Landmark, Menu, MinusCircle, PlusCircle, Power, Wallet } from '@lucide/vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { formatCompactDate, formatCurrency } from '@pos/shared/index'
 
 const auth = useAuthStore()
 const store = usePosStore()
+const router = useRouter()
 
 const isManageOpen = ref(false)
 const openingCashInput = ref('')
@@ -14,6 +16,40 @@ const movementAmountInput = ref('')
 const movementReason = ref('')
 const closingCashInput = ref('')
 const isSaving = ref(false)
+
+const now = ref(new Date())
+let clockTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  clockTimer = setInterval(() => { now.value = new Date() }, 30_000)
+})
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
+
+const formattedDate = computed(() =>
+  new Intl.DateTimeFormat('en-PH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(now.value),
+)
+const formattedTime = computed(() =>
+  new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true }).format(now.value),
+)
+
+function goToDashboard() {
+  void router.push({ name: 'dashboard' })
+}
+
+async function handleSignOut() {
+  await auth.logout()
+  await router.replace({ name: 'auth' })
+}
+
+async function openShiftManager() {
+  try {
+    await store.refreshActiveShift()
+  } catch {
+    // If refresh fails, keep whatever cached state we already have and still open the panel.
+  }
+  isManageOpen.value = true
+}
 
 const currentUserId = computed(() => {
   const userId = auth.currentUser?.id
@@ -83,22 +119,32 @@ async function handleCloseShift() {
 </script>
 
 <template>
-  <section class="shift-strip">
-    <div class="shift-strip__status" :class="{ 'shift-strip__status--open': store.activeShift }">
-      <Wallet :size="14" />
-      <span>{{ store.activeShift ? 'Shift open' : 'Shift closed' }}</span>
-    </div>
-
-    <div v-if="store.activeShift" class="shift-strip__meta">
-      <span>Opened {{ formatCompactDate(store.activeShift.openedAt) }}</span>
-      <span class="shift-strip__divider">·</span>
-      <span>Expected cash {{ formatCurrency(store.activeShift.expectedCashCents) }}</span>
-    </div>
-    <p v-else class="shift-strip__meta">Open a shift to start charging orders.</p>
-
-    <button class="segment-button shift-strip__action" type="button" @click="isManageOpen = true">
-      {{ store.activeShift ? 'Manage shift' : 'Open shift' }}
+  <section class="register-topbar">
+    <button class="register-topbar__icon-btn register-topbar__icon-btn--ghost" type="button" aria-label="Back to dashboard" @click="goToDashboard">
+      <Menu :size="20" />
     </button>
+
+    <div class="register-topbar__datetime">
+      <span class="register-topbar__date"><Calendar :size="14" aria-hidden="true" />{{ formattedDate }}</span>
+      <span class="register-topbar__sep" aria-hidden="true">–</span>
+      <span class="register-topbar__time"><Clock :size="14" aria-hidden="true" />{{ formattedTime }}</span>
+    </div>
+
+    <div class="register-topbar__right">
+      <button
+        class="register-topbar__status"
+        :class="{ 'register-topbar__status--active': store.activeShift }"
+        type="button"
+        @click="openShiftManager"
+      >
+        <span class="register-topbar__dot" :class="{ 'register-topbar__dot--active': store.activeShift }" aria-hidden="true" />
+        <Wallet :size="14" aria-hidden="true" />
+        {{ store.activeShift ? 'Manage shift' : 'Open shift' }}
+      </button>
+      <button class="register-topbar__icon-btn register-topbar__icon-btn--danger" type="button" aria-label="Sign out" @click="handleSignOut">
+        <Power :size="18" />
+      </button>
+    </div>
   </section>
 
   <Teleport to="body">
@@ -241,55 +287,133 @@ async function handleCloseShift() {
 </template>
 
 <style scoped>
-.shift-strip {
+.register-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 0.5px solid var(--separator);
-  border-radius: var(--radius-lg);
+  padding: var(--space-4) 20px;
+  border: none;
+  border-bottom: 0.5px solid var(--separator);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--material-bar);
 }
 
-.shift-strip__status {
-  display: inline-flex;
+.register-topbar__icon-btn {
+  display: inline-grid;
   flex: none;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.75rem;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.15);
-  color: var(--text-secondary);
-  font: var(--type-caption);
-  font-weight: 700;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-primary);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.shift-strip__status--open {
-  background: color-mix(in srgb, var(--success) 16%, transparent);
-  color: var(--success);
+.register-topbar__icon-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--fill));
+  color: var(--accent);
 }
 
-.shift-strip__meta {
+.register-topbar__icon-btn--danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--fill));
+  color: var(--danger);
+}
+
+.register-topbar__icon-btn--ghost {
+  background: transparent;
+}
+
+.register-topbar__icon-btn--ghost:hover {
+  background: var(--fill);
+  color: var(--text-primary);
+}
+
+.register-topbar__datetime {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  gap: var(--space-3);
   min-width: 0;
-  margin: 0;
-  overflow: hidden;
   color: var(--text-secondary);
-  font: var(--type-caption);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font: var(--type-subhead);
+  font-weight: 600;
 }
 
-.shift-strip__divider {
+.register-topbar__date,
+.register-topbar__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  white-space: nowrap;
+}
+
+.register-topbar__sep {
   color: var(--text-tertiary);
 }
 
-.shift-strip__action {
+.register-topbar__right {
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.register-topbar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-subhead);
+  font-weight: 700;
+  white-space: nowrap;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.register-topbar__status:hover {
+  opacity: 0.7;
+}
+
+.register-topbar__status--active {
+  color: var(--danger);
+}
+
+.register-topbar__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--text-tertiary);
+}
+
+.register-topbar__dot--active {
+  background: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .register-topbar {
+    flex-wrap: wrap;
+  }
+
+  .register-topbar__datetime {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .shift-panel__error {
@@ -304,6 +428,7 @@ async function handleCloseShift() {
 
 .shift-panel__body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
@@ -349,6 +474,7 @@ async function handleCloseShift() {
 
 .shift-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   padding: var(--space-4);
   border: 0.5px solid var(--separator);
@@ -368,6 +494,7 @@ async function handleCloseShift() {
 
 .shift-log {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.9rem;
 }
 
@@ -402,22 +529,12 @@ async function handleCloseShift() {
 }
 
 @media (max-width: 720px) {
-  .shift-strip {
-    flex-wrap: wrap;
-  }
-
-  .shift-strip__meta {
-    order: 3;
-    flex-basis: 100%;
-    white-space: normal;
-  }
-
   .shift-chip-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .shift-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .shift-log__row {

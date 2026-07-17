@@ -16,11 +16,14 @@ import {
   type CreateCustomerInput,
   type CreateOrderInput,
   type CreateProductInput,
+  type CreateTableInput,
   type Customer,
   type OrderItemSummary,
+  type OrderStatus,
   type OrderSummary,
   type PaymentMethod,
   type Product,
+  type RestaurantTable,
   type RoleDefinition,
   type ShiftSummary,
   type UserAccount,
@@ -112,6 +115,8 @@ function buildDemoOrder(createdAt: Date, customers: Customer[]): OrderSummary {
     customerId: customer?.id ?? null,
     customerName: customer?.name ?? guestCustomerName,
     orderType: Math.random() < 0.7 ? 'takeaway' : 'dine_in',
+    tableNumber: null,
+    status: 'served',
     paymentMethod,
     subtotalCents,
     taxCents,
@@ -155,6 +160,7 @@ export function createDemoPosRepository(): PosRepository {
   let products: Product[] = [...demoProducts]
   let categories: Category[] = [...demoCategories]
   let customers: Customer[] = seedDemoCustomers()
+  let tables: RestaurantTable[] = []
   let orders: OrderSummary[] = seedDemoOrders(customers)
   let settings: AppSettings = { ...defaultSettings, businessName: 'Cole POS Demo' }
   let appEvents: AppEvent[] = []
@@ -177,6 +183,10 @@ export function createDemoPosRepository(): PosRepository {
       return customers
     },
 
+    async loadTables() {
+      return tables
+    },
+
     async loadActiveShift() {
       return activeShift
     },
@@ -196,6 +206,8 @@ export function createDemoPosRepository(): PosRepository {
         customerId: input.customerId ?? null,
         customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
+        tableNumber: input.tableNumber?.trim() || null,
+        status: 'preparing',
         paymentMethod: input.paymentMethod,
         subtotalCents,
         taxCents,
@@ -219,6 +231,32 @@ export function createDemoPosRepository(): PosRepository {
       }
 
       return order
+    },
+
+    async updateOrderStatus(orderId: string, status: OrderStatus) {
+      const index = orders.findIndex((order) => order.id === orderId)
+      if (index === -1) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+
+      const updated = { ...orders[index], status }
+      orders = orders.map((order, i) => (i === index ? updated : order))
+      return updated
+    },
+
+    async loadOnlineOrders() {
+      return []
+    },
+
+    async settleOrderPayment(orderId: string, input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number }) {
+      const index = orders.findIndex((order) => order.id === orderId)
+      if (index === -1) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+
+      const updated = { ...orders[index], paymentStatus: 'paid' as const, ...input }
+      orders = orders.map((order, i) => (i === index ? updated : order))
+      return updated
     },
 
     async saveCustomer(input: CreateCustomerInput) {
@@ -256,6 +294,34 @@ export function createDemoPosRepository(): PosRepository {
 
     async deleteCustomer(id: string) {
       customers = customers.filter((customer) => customer.id !== id)
+    },
+
+    async saveTable(input: CreateTableInput) {
+      const timestamp = new Date().toISOString()
+      const table: RestaurantTable = {
+        id: crypto.randomUUID(),
+        floor: input.floor,
+        label: input.label,
+        capacity: input.capacity,
+        status: 'available',
+        guestName: null,
+        guestCount: null,
+        seatedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      tables = [...tables, table]
+      return table
+    },
+
+    async updateTable(table: RestaurantTable) {
+      const nextTable: RestaurantTable = { ...table, updatedAt: new Date().toISOString() }
+      tables = tables.map((entry) => (entry.id === nextTable.id ? nextTable : entry))
+      return nextTable
+    },
+
+    async deleteTable(id: string) {
+      tables = tables.filter((table) => table.id !== id)
     },
 
     async openShift(input) {

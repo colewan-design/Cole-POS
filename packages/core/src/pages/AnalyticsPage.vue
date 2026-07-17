@@ -446,6 +446,7 @@ const hourlySummary = computed(() => {
 /* ── Page layout ────────────────────────────────────────────────────────── */
 .analytics-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   padding-bottom: var(--space-10);
 }
@@ -701,7 +702,7 @@ const hourlySummary = computed(() => {
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .analytics-header__controls { flex-direction: column; align-items: flex-start; }
-  .charts-grid { grid-template-columns: 1fr; }
+  .charts-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

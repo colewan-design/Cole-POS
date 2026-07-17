@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ImagePlus, Trash2, X } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { businessModeLabel, type BusinessMode, type Product } from '@pos/shared/index'
@@ -79,6 +80,7 @@ watch(
 
 const isEdit = computed(() => Boolean(props.product))
 const title = computed(() => (isEdit.value ? 'Edit Product' : 'Add Product'))
+const categoryOptions = computed(() => store.categories.map((cat) => ({ value: cat.id, label: cat.name })))
 
 const isValid = computed(
   () =>
@@ -236,11 +238,11 @@ function handleKeydown(e: KeyboardEvent) {
               <!-- Category -->
               <div class="ps-field">
                 <p class="section-label">Category</p>
-                <select v-model="form.categoryId" class="sheet-input">
-                  <option v-for="cat in store.categories" :key="cat.id" :value="cat.id">
-                    {{ cat.name }}
-                  </option>
-                </select>
+                <AutocompleteSelect
+                  v-model="form.categoryId"
+                  label="Category"
+                  :options="categoryOptions"
+                />
               </div>
 
               <!-- Price -->

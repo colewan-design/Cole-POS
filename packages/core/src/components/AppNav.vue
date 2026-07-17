@@ -3,6 +3,7 @@ import {
   BarChart3,
   Boxes,
   LayoutDashboard,
+  LayoutGrid,
   Package,
   Plug,
   ReceiptText,
@@ -14,16 +15,19 @@ import {
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePosStore } from '@pos/core/stores/pos'
+import { useAuthStore } from '@pos/core/stores/auth'
 
 const emit = defineEmits<{ navigate: [] }>()
 const route = useRoute()
 const store = usePosStore()
+const auth = useAuthStore()
 
-const navItems = computed(() => [
+const allNavItems = [
   { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { page: 'register', label: 'Register', icon: ShoppingCart, to: '/register' },
   { page: 'sales', label: 'Sales', icon: BarChart3, to: '/sales' },
   { page: 'orders', label: 'Orders', icon: ReceiptText, to: '/orders' },
+  { page: 'tables', label: 'Tables', icon: LayoutGrid, to: '/tables' },
   { page: 'products', label: 'Products', icon: Package, to: '/products' },
   { page: 'customers', label: 'Customers', icon: Users, to: '/customers' },
   { page: 'suppliers', label: 'Suppliers', icon: Truck, to: '/suppliers' },
@@ -31,7 +35,16 @@ const navItems = computed(() => [
   { page: 'inventory', label: 'Inventory', icon: Boxes, to: '/inventory' },
   { page: 'reports', label: 'Reports', icon: ShoppingCart, to: '/reports' },
   { page: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations' },
-])
+] as const
+
+const navItems = computed(() =>
+  allNavItems.filter((item) => {
+    if (item.page === 'tables' && store.settings.businessMode !== 'restaurant') {
+      return false
+    }
+    return auth.canAccess(item.page)
+  }),
+)
 
 function isActive(path: string) {
   return route.path === path
@@ -65,6 +78,7 @@ function isActive(path: string) {
 <style scoped>
 .workspace-nav {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 

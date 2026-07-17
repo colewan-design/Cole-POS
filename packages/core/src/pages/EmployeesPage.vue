@@ -10,6 +10,7 @@ import {
   Users,
 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { appPageKeys, appPageLabel, type AppPageKey } from '@pos/shared/index'
@@ -29,6 +30,7 @@ const newRoleName = ref('')
 
 const activeRole = computed(() => auth.roles.find((role) => role.id === activeRoleId.value) ?? null)
 const roleOptions = computed(() => auth.roles.map((role) => ({ value: role.id, label: role.name })))
+const roleFilterOptions = computed(() => [{ value: 'all', label: 'All roles' }, ...roleOptions.value])
 
 const filteredUsers = computed(() => {
   const needle = searchQuery.value.trim().toLowerCase()
@@ -188,12 +190,12 @@ function removeActiveRole() {
               aria-label="Search employees"
             />
           </label>
-          <select v-model="roleFilter" class="sheet-input emp-toolbar__select" aria-label="Filter by role">
-            <option value="all">All roles</option>
-            <option v-for="role in roleOptions" :key="role.value" :value="role.value">
-              {{ role.label }}
-            </option>
-          </select>
+          <AutocompleteSelect
+            v-model="roleFilter"
+            class="emp-toolbar__select"
+            label="Filter by role"
+            :options="roleFilterOptions"
+          />
         </div>
 
         <div v-if="filteredUsers.length" class="emp-list">
@@ -208,16 +210,14 @@ function removeActiveRole() {
               </div>
               <p class="emp-row__sub">@{{ user.username }} · Joined {{ formatMemberSince(user.createdAt) }}</p>
             </div>
-            <select
-              class="sheet-input emp-row__select"
-              :value="user.roleId"
+            <AutocompleteSelect
+              class="emp-row__select"
+              :model-value="user.roleId"
+              label="Assign role"
               :disabled="!auth.canManageAccess"
-              @change="assignUserRole(user.id, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="role in roleOptions" :key="role.value" :value="role.value">
-                {{ role.label }}
-              </option>
-            </select>
+              :options="roleOptions"
+              @update:model-value="assignUserRole(user.id, $event)"
+            />
           </div>
         </div>
 
@@ -304,6 +304,7 @@ function removeActiveRole() {
 <style scoped>
 .emp-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-4) 0 var(--space-8);
 }
@@ -635,7 +636,7 @@ function removeActiveRole() {
 
 @media (max-width: 1100px) {
   .emp-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -661,11 +662,13 @@ function removeActiveRole() {
   .emp-row__select {
     width: 100%;
   }
-}
 
-@media (max-width: 480px) {
-  .emp-metrics {
-    grid-template-columns: 1fr;
+  .emp-card {
+    padding: var(--space-4);
+  }
+
+  .emp-perm-row {
+    padding: var(--space-2) var(--space-3);
   }
 }
 </style>

@@ -2,7 +2,7 @@
 import { AlertTriangle, Check, Package, Search, TrendingDown, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePosStore } from '@pos/core/stores/pos'
-import SelectMenu from '@pos/core/components/SelectMenu.vue'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import { formatCurrency, type Product } from '@pos/shared/index'
 
 const store = usePosStore()
@@ -133,6 +133,69 @@ function thumbColor(categoryId: string): string {
   return THUMB_PALETTE[(i < 0 ? 0 : i) % THUMB_PALETTE.length]
 }
 
+// ── Swipe-to-reveal actions (mobile) ───────────────────────────────────────────
+// Width must match the .inv-row__actions absolute width set in <style> below.
+const REVEAL_WIDTH = 168
+
+const isMobile = ref(false)
+const swipeOpenId = ref<string | null>(null)
+const dragId = ref<string | null>(null)
+let dragStartX = 0
+const dragDeltaX = ref(0)
+
+onMounted(() => {
+  const mq = window.matchMedia('(max-width: 720px)')
+  isMobile.value = mq.matches
+  const handleChange = (e: MediaQueryListEvent) => {
+    isMobile.value = e.matches
+    if (!isMobile.value) swipeOpenId.value = null
+  }
+  mq.addEventListener('change', handleChange)
+  onUnmounted(() => mq.removeEventListener('change', handleChange))
+})
+
+function onSwipeStart(id: string, e: PointerEvent) {
+  if (!isMobile.value) return
+  if (swipeOpenId.value && swipeOpenId.value !== id) swipeOpenId.value = null
+  dragId.value = id
+  dragStartX = e.clientX
+  dragDeltaX.value = 0
+  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+}
+
+function onSwipeMove(id: string, e: PointerEvent) {
+  if (dragId.value !== id) return
+  const base = swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+  const min = -REVEAL_WIDTH - base
+  const max = -base
+  dragDeltaX.value = Math.max(min, Math.min(max, e.clientX - dragStartX))
+}
+
+function onSwipeEnd(id: string) {
+  if (dragId.value !== id) return
+  const wasOpen = swipeOpenId.value === id
+  const base = wasOpen ? -REVEAL_WIDTH : 0
+  const finalOffset = base + dragDeltaX.value
+  const moved = Math.abs(dragDeltaX.value) > 4
+
+  if (!moved) {
+    if (wasOpen) swipeOpenId.value = null
+  } else {
+    swipeOpenId.value = finalOffset < -REVEAL_WIDTH / 2 ? id : null
+  }
+
+  dragId.value = null
+  dragDeltaX.value = 0
+}
+
+function frontOffset(id: string) {
+  if (dragId.value === id) {
+    const base = swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+    return base + dragDeltaX.value
+  }
+  return swipeOpenId.value === id ? -REVEAL_WIDTH : 0
+}
+
 // ── Restock ───────────────────────────────────────────────────────────────────
 const restockingId = ref<string | null>(null)
 const restockQty = ref(1)
@@ -152,6 +215,7 @@ async function submitRestock(id: string, e: Event) {
   e.stopPropagation()
   if (restockQty.value > 0) await store.restockProduct(id, restockQty.value)
   restockingId.value = null
+  if (swipeOpenId.value === id) swipeOpenId.value = null
 }
 
 // ── Set exact stock ───────────────────────────────────────────────────────────
@@ -174,6 +238,7 @@ async function submitSet(product: Product, e: Event) {
   const qty = Math.max(0, setQty.value)
   await store.editProduct({ ...product, stockQty: qty, outOfStock: qty === 0 })
   settingId.value = null
+  if (swipeOpenId.value === product.id) swipeOpenId.value = null
 }
 </script>
 
@@ -270,7 +335,7 @@ async function submitSet(product: Product, e: Event) {
           </div>
         </template>
 
-        <SelectMenu
+        <AutocompleteSelect
           v-model="sortBy"
           label="Sort by"
           :options="[
@@ -305,57 +370,67 @@ async function submitSet(product: Product, e: Event) {
           v-for="{ product, y } in visibleItems"
           :key="product.id"
           class="inv-row"
-          :class="{
-            'inv-row--oos': stockStatus(product) === 'oos',
-            'inv-row--low': stockStatus(product) === 'low',
-          }"
           :style="{ top: y + 'px' }"
         >
-          <!-- Thumbnail -->
-          <div class="inv-row__thumb" :style="{ '--thumb-c': thumbColor(product.categoryId) }">
-            <img
-              v-if="product.imageUrl && !failedImages[product.id]"
-              :src="product.imageUrl"
-              :alt="product.name"
-              loading="lazy"
-              @error="failedImages[product.id] = true"
-            />
-            <span v-else class="inv-row__initial">{{ product.name.charAt(0).toUpperCase() }}</span>
-          </div>
-
-          <!-- Body -->
-          <div class="inv-row__body">
-            <p class="inv-row__name">{{ product.name }}</p>
-            <div class="inv-row__meta">
-              <span class="inv-row__sku">{{ product.sku }}</span>
-              <span class="inv-row__category">{{ store.categories.find((c) => c.id === product.categoryId)?.name }}</span>
+          <!-- Front: swipes left to reveal actions on mobile -->
+          <div
+            class="inv-row__front"
+            :class="{
+              'inv-row--oos': stockStatus(product) === 'oos',
+              'inv-row--low': stockStatus(product) === 'low',
+            }"
+            :style="{ transform: `translateX(${frontOffset(product.id)}px)`, transition: dragId === product.id ? 'none' : undefined }"
+            @pointerdown="onSwipeStart(product.id, $event)"
+            @pointermove="onSwipeMove(product.id, $event)"
+            @pointerup="onSwipeEnd(product.id)"
+            @pointercancel="onSwipeEnd(product.id)"
+          >
+            <!-- Thumbnail -->
+            <div class="inv-row__thumb" :style="{ '--thumb-c': thumbColor(product.categoryId) }">
+              <img
+                v-if="product.imageUrl && !failedImages[product.id]"
+                :src="product.imageUrl"
+                :alt="product.name"
+                loading="lazy"
+                @error="failedImages[product.id] = true"
+              />
+              <span v-else class="inv-row__initial">{{ product.name.charAt(0).toUpperCase() }}</span>
             </div>
+
+            <!-- Body -->
+            <div class="inv-row__body">
+              <p class="inv-row__name">{{ product.name }}</p>
+              <div class="inv-row__meta">
+                <span class="inv-row__sku">{{ product.sku }}</span>
+                <span class="inv-row__category">{{ store.categories.find((c) => c.id === product.categoryId)?.name }}</span>
+              </div>
+            </div>
+
+            <!-- Stock level -->
+            <div class="inv-row__stock">
+              <template v-if="product.stockQty !== undefined">
+                <span
+                  class="inv-stock-badge"
+                  :class="{
+                    'inv-stock-badge--oos': stockStatus(product) === 'oos',
+                    'inv-stock-badge--low': stockStatus(product) === 'low',
+                    'inv-stock-badge--ok': stockStatus(product) === 'healthy',
+                  }"
+                >
+                  {{ product.stockQty === 0 ? 'Out of stock' : `${product.stockQty} in stock` }}
+                </span>
+                <span v-if="product.lowStockThreshold !== undefined" class="inv-row__threshold">
+                  threshold {{ product.lowStockThreshold }}
+                </span>
+              </template>
+              <span v-else class="inv-row__untracked">Not tracked</span>
+            </div>
+
+            <!-- Price -->
+            <p class="inv-row__price">{{ formatCurrency(product.priceCents) }}</p>
           </div>
 
-          <!-- Stock level -->
-          <div class="inv-row__stock">
-            <template v-if="product.stockQty !== undefined">
-              <span
-                class="inv-stock-badge"
-                :class="{
-                  'inv-stock-badge--oos': stockStatus(product) === 'oos',
-                  'inv-stock-badge--low': stockStatus(product) === 'low',
-                  'inv-stock-badge--ok': stockStatus(product) === 'healthy',
-                }"
-              >
-                {{ product.stockQty === 0 ? 'Out of stock' : `${product.stockQty} in stock` }}
-              </span>
-              <span v-if="product.lowStockThreshold !== undefined" class="inv-row__threshold">
-                threshold {{ product.lowStockThreshold }}
-              </span>
-            </template>
-            <span v-else class="inv-row__untracked">Not tracked</span>
-          </div>
-
-          <!-- Price -->
-          <p class="inv-row__price">{{ formatCurrency(product.priceCents) }}</p>
-
-          <!-- Actions -->
+          <!-- Actions: static on desktop, revealed by swipe on mobile -->
           <div class="inv-row__actions" @click.stop @keydown.stop>
             <!-- Restock inline -->
             <template v-if="product.stockQty !== undefined && restockingId === product.id">
@@ -422,6 +497,7 @@ async function submitSet(product: Product, e: Event) {
 <style scoped>
 .inv-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-4) 0 var(--space-8);
 }
@@ -546,32 +622,49 @@ async function submitSet(product: Product, e: Event) {
   left: 0;
   right: 0;
   height: 68px;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+/* Front carries all row content and slides left to reveal .inv-row__actions on mobile.
+   flex:1 so it fills the row next to the (desktop-static / mobile-absolute) actions panel. */
+.inv-row__front {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  height: 100%;
   padding: 0 var(--space-4);
-  border-bottom: 0.5px solid var(--separator);
-  transition: background var(--dur-fast) var(--ease-out);
+  /* Must be fully opaque (--bg-surface is a translucent material-bar token,
+     ~88% alpha in every theme) or the swipe action underneath bleeds through. */
+  background: var(--bg-elevated);
+  touch-action: pan-y;
+  transition: background var(--dur-fast) var(--ease-out), transform 200ms var(--ease-out);
 }
 
-.inv-row:hover {
+.inv-row__front:hover {
   background: var(--fill);
 }
 
 .inv-row--oos {
-  background: color-mix(in srgb, var(--danger) 5%, transparent);
+  background: color-mix(in srgb, var(--danger) 5%, var(--bg-elevated));
 }
 
 .inv-row--oos:hover {
-  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  background: color-mix(in srgb, var(--danger) 9%, var(--bg-elevated));
 }
 
 .inv-row--low {
-  background: color-mix(in srgb, var(--warning) 5%, transparent);
+  background: color-mix(in srgb, var(--warning) 5%, var(--bg-elevated));
 }
 
 .inv-row--low:hover {
-  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-elevated));
 }
 
 /* Thumbnail */
@@ -739,21 +832,25 @@ async function submitSet(product: Product, e: Event) {
   .inv-list {
     height: clamp(280px, calc(100svh - 320px), 700px);
   }
-}
 
-@media (max-width: 480px) {
-  .inv-kpis {
-    grid-template-columns: 1fr;
+  /* Front becomes an unambiguous full-cover overlay (not reliant on flex:1 to
+     fill the row) so it can never leave a sliver of .inv-row__actions showing. */
+  .inv-row__front {
+    position: absolute;
+    inset: 0;
   }
 
-  .inv-row__stock {
-    min-width: 90px;
-  }
-
+  /* Actions live off-screen to the right, underneath front; swiping .inv-row__front left reveals them. */
   .inv-row__actions {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    width: 168px;
+    padding: 0 var(--space-3);
+    justify-content: center;
+    background: var(--bg-elevated);
   }
 }
 </style>

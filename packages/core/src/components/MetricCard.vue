@@ -26,6 +26,7 @@ defineProps<{
 <style scoped>
 .metric-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   padding: var(--space-4);
   border-radius: var(--radius-lg);

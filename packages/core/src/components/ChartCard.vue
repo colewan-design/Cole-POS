@@ -18,6 +18,7 @@ defineProps<{
 <style scoped>
 .chart-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   gap: var(--space-4);
   padding: var(--space-5);
@@ -40,5 +41,16 @@ defineProps<{
 
 .chart-card--wide {
   grid-column: 1 / -1;
+}
+
+@media (max-width: 780px) {
+  .chart-card {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .chart-card__body {
+    min-height: 80px;
+  }
 }
 </style>

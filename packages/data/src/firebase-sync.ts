@@ -29,15 +29,20 @@ import {
   type QueryDocumentSnapshot,
   type Transaction,
 } from 'firebase/firestore'
-import type {
-  Category,
-  CashMovementSummary,
-  CashMovementType,
-  AuthSession,
-  Product,
-  RoleDefinition,
-  ShiftSummary,
-  UserAccount,
+import {
+  guestCustomerName,
+  type Category,
+  type CashMovementSummary,
+  type CashMovementType,
+  type AuthSession,
+  type OrderChannel,
+  type OrderSummary,
+  type PaymentMethod,
+  type PaymentStatus,
+  type Product,
+  type RoleDefinition,
+  type ShiftSummary,
+  type UserAccount,
 } from '@pos/shared/index'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -169,6 +174,76 @@ function mapFsProduct(docSnap: QueryDocumentSnapshot): Product {
   }
 }
 
+interface FsOrder {
+  ticketNumber: string
+  businessMode?: string
+  orderType: string
+  tableNumber?: string | null
+  status?: string
+  channel?: string
+  paymentStatus?: string
+  paymentMethod: string | null
+  subtotalCents: number
+  taxCents: number
+  totalCents: number
+  tenderedCents: number
+  changeCents: number
+  customerId?: string | null
+  customerName?: string
+  guestContact?: { name: string; phone?: string; email?: string } | null
+  createdAt: Timestamp | null
+}
+
+interface FsOrderItem {
+  productId: string | null
+  productName: string
+  quantity: number
+  unitPriceCents: number
+  lineTotalCents: number
+}
+
+// Reads back an order Firestore doc written either by pushOrderEvent (staff,
+// in-person) or the createOnlineOrder Cloud Function (guest, online) — the two
+// writers share the same collection/shape, differing only in the additive
+// channel/paymentStatus/guestContact fields.
+function mapFsOrder(
+  orderSnap: QueryDocumentSnapshot | DocumentSnapshot,
+  itemDocs: QueryDocumentSnapshot[],
+): OrderSummary {
+  const data = orderSnap.data() as FsOrder
+
+  return {
+    id: orderSnap.id,
+    ticketNumber: data.ticketNumber,
+    businessMode: (data.businessMode ?? 'coffee-shop') as OrderSummary['businessMode'],
+    customerId: data.customerId ?? null,
+    customerName: data.customerName?.trim() || data.guestContact?.name || guestCustomerName,
+    orderType: data.orderType as OrderSummary['orderType'],
+    tableNumber: data.tableNumber ?? null,
+    status: (data.status ?? 'preparing') as OrderSummary['status'],
+    paymentMethod: (data.paymentMethod ?? 'cash') as PaymentMethod,
+    subtotalCents: data.subtotalCents,
+    taxCents: data.taxCents,
+    totalCents: data.totalCents,
+    tenderedCents: data.tenderedCents,
+    changeCents: data.changeCents,
+    createdAt: toIso(data.createdAt),
+    items: itemDocs.map((itemDoc) => {
+      const item = itemDoc.data() as FsOrderItem
+      return {
+        productId: item.productId ?? '',
+        name: item.productName,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        lineTotalCents: item.lineTotalCents,
+      }
+    }),
+    channel: (data.channel ?? 'in_person') as OrderChannel,
+    paymentStatus: (data.paymentStatus ?? 'paid') as PaymentStatus,
+    guestContact: data.guestContact ?? null,
+  }
+}
+
 function mapFsCashMovement(docSnap: QueryDocumentSnapshot): CashMovementSummary {
   const data = docSnap.data() as FsCashMovement
   return {
@@ -286,6 +361,8 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
     const order = p.order as {
       ticketNumber: string
       orderType: string
+      tableNumber?: string | null
+      status?: string
       subtotalCents: number
       taxCents: number
       totalCents: number
@@ -322,6 +399,8 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       ticketNumber: order.ticketNumber,
       businessMode: order.businessMode ?? 'coffee-shop',
       orderType: order.orderType,
+      tableNumber: order.tableNumber ?? null,
+      status: order.status ?? 'preparing',
       paymentMethod,
       subtotalCents: order.subtotalCents,
       taxCents: order.taxCents,
@@ -771,6 +850,40 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
           return mapFsShift(shiftDoc, movementsSnap.docs)
         }),
       )
+    },
+
+    async pullOnlineOrders(storeId: string): Promise<OrderSummary[]> {
+      const ordersRef = collection(db, 'organizations', config.organizationSlug, 'stores', storeId, 'orders')
+      const snap = await getDocs(
+        query(ordersRef, where('channel', '==', 'online'), orderBy('createdAt', 'desc'), limit(50)),
+      )
+
+      return Promise.all(
+        snap.docs.map(async (orderDoc) => {
+          const itemsSnap = await getDocs(collection(orderDoc.ref, 'items'))
+          return mapFsOrder(orderDoc, itemsSnap.docs)
+        }),
+      )
+    },
+
+    async settleOrderPayment(
+      storeId: string,
+      orderId: string,
+      input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+    ): Promise<OrderSummary> {
+      const orderRef = doc(db, 'organizations', config.organizationSlug, 'stores', storeId, 'orders', orderId)
+      await updateDoc(orderRef, {
+        paymentStatus: 'paid',
+        paymentMethod: input.paymentMethod,
+        tenderedCents: input.tenderedCents,
+        changeCents: input.changeCents,
+      })
+
+      const [orderSnap, itemsSnap] = await Promise.all([getDoc(orderRef), getDocs(collection(orderRef, 'items'))])
+      if (!orderSnap.exists()) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+      return mapFsOrder(orderSnap, itemsSnap.docs)
     },
 
     async openShift(input: {

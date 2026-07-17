@@ -57,6 +57,21 @@
   --dur-fast: 150ms;
   --dur-base: 250ms;
   --dur-slow: 400ms;
+
+  /*
+   * Categorical tag hues — identity color for product-category badges.
+   * Fixed order, constant across color themes/business modes (never
+   * overridden per-theme like --accent), so a category keeps its hue
+   * regardless of which theme or business mode is active.
+   */
+  --tag-1-blue: #2a78d6;
+  --tag-2-aqua: #1baf7a;
+  --tag-3-yellow: #eda100;
+  --tag-4-green: #008300;
+  --tag-5-violet: #4a3aa7;
+  --tag-6-red: #e34948;
+  --tag-7-magenta: #e87ba4;
+  --tag-8-orange: #eb6834;
 }
 
 /*
@@ -80,6 +95,15 @@
     --text-tertiary: #8e8e93;
     --separator: rgba(84, 84, 88, 0.55);
     --material-bar-bg: rgba(30, 30, 30, 0.72);
+
+    --tag-1-blue: #3987e5;
+    --tag-2-aqua: #199e70;
+    --tag-3-yellow: #c98500;
+    --tag-4-green: #008300;
+    --tag-5-violet: #9085e9;
+    --tag-6-red: #e66767;
+    --tag-7-magenta: #d55181;
+    --tag-8-orange: #d95926;
   }
 }
 
@@ -98,6 +122,15 @@
   --text-tertiary: #8e8e93;
   --separator: rgba(84, 84, 88, 0.55);
   --material-bar-bg: rgba(30, 30, 30, 0.72);
+
+  --tag-1-blue: #3987e5;
+  --tag-2-aqua: #199e70;
+  --tag-3-yellow: #c98500;
+  --tag-4-green: #008300;
+  --tag-5-violet: #9085e9;
+  --tag-6-red: #e66767;
+  --tag-7-magenta: #d55181;
+  --tag-8-orange: #d95926;
 }
 
 /*

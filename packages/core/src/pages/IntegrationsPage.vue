@@ -326,6 +326,7 @@ const setupTasks = computed(() => [
 <style scoped>
 .integrations-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-4) 0 var(--space-8);
 }
@@ -591,7 +592,7 @@ const setupTasks = computed(() => [
   }
 
   .integrations-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -604,7 +605,7 @@ const setupTasks = computed(() => [
   .integrations-kpis,
   .integrations-grid,
   .integrations-event {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .integrations-setting-row {

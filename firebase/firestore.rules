@@ -26,13 +26,19 @@ service cloud.firestore {
         allow write: if isAdmin() && orgId == userOrgId();
       }
       match /categories/{categoryId} {
-        allow read, write: if signedIn() && orgId == userOrgId();
+        allow read: if true;                       // public storefront catalog
+        allow write: if signedIn() && orgId == userOrgId();
       }
       match /products/{productId} {
-        allow read, write: if signedIn() && orgId == userOrgId();
+        allow read: if true;                       // public storefront catalog
+        allow write: if signedIn() && orgId == userOrgId();
       }
       match /stores/{storeId}/orders/{orderId} {
         allow read, write: if signedIn() && orgId == userOrgId();
+        // Public order-tracking link: the doc ID is the capability token. Only
+        // single-doc "get" is public — "list" stays staff-only, so orders can
+        // never be browsed/enumerated by an outsider.
+        allow get: if true;
         match /items/{itemId} { allow read, write: if signedIn() && orgId == userOrgId(); }
       }
       match /stores/{storeId}/inventoryLevels/{productId} {

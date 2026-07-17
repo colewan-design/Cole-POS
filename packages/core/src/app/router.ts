@@ -11,6 +11,7 @@ import DiagnosticsPage from '@pos/core/pages/DiagnosticsPage.vue'
 import EmployeesPage from '@pos/core/pages/EmployeesPage.vue'
 import CustomersPage from '@pos/core/pages/CustomersPage.vue'
 import SuppliersPage from '@pos/core/pages/SuppliersPage.vue'
+import TablesPage from '@pos/core/pages/TablesPage.vue'
 import ReportsPage from '@pos/core/pages/ReportsPage.vue'
 import IntegrationsPage from '@pos/core/pages/IntegrationsPage.vue'
 import type { AppPageKey } from '@pos/shared/index'
@@ -36,6 +37,7 @@ export function createPosRouter() {
       { path: '/suppliers',   name: 'suppliers',   component: SuppliersPage, meta: { pageKey: 'suppliers' } },
       { path: '/employees',   name: 'employees',   component: EmployeesPage, meta: { pageKey: 'employees' } },
       { path: '/inventory',   name: 'inventory',   component: InventoryPage, meta: { pageKey: 'inventory' }, alias: '/inventories' },
+      { path: '/tables',      name: 'tables',      component: TablesPage, meta: { pageKey: 'tables' } },
       { path: '/reports',     name: 'reports',     component: ReportsPage, meta: { pageKey: 'reports' } },
       { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations' } },
       { path: '/register',    name: 'register',    component: RegisterPage, meta: { pageKey: 'register' } },

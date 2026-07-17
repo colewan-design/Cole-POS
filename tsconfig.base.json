@@ -24,6 +24,9 @@
       ],
       "@pos/data/*": [
         "packages/data/src/*"
+      ],
+      "@pos/web/*": [
+        "apps/web/src/*"
       ]
     }
   }

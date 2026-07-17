@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { formatCurrency } from '@pos/shared/index'
+import { formatCurrency, paymentMethodOptions } from '@pos/shared/index'
+import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import NumericKeypad from '@pos/core/components/NumericKeypad.vue'
 import { usePosStore } from '@pos/core/stores/pos'
+import { useSheetDrag } from '@pos/core/utils/sheetDrag'
 
 const emit = defineEmits<{ close: []; confirm: [] }>()
 const store = usePosStore()
+
+const { dragOffset, isDragging, isClosing, onPointerDown, onPointerMove, onPointerUp, onPointerCancel } = useSheetDrag({
+  onDismiss: () => emit('close'),
+})
 
 // Prevents a double-tap from firing two orders. Reset on unmount (dialog close).
 const confirming = ref(false)
@@ -15,12 +21,6 @@ const customerName = ref('')
 const customerPhone = ref('')
 const customerEmail = ref('')
 const customerError = ref('')
-
-const paymentMethods = [
-  { id: 'cash',    label: 'Cash' },
-  { id: 'card',    label: 'Card' },
-  { id: 'ewallet', label: 'E-wallet' },
-] as const
 
 // Philippine peso bill denominations in centavos
 const BILLS = [10000, 20000, 50000, 100000, 200000, 500000]
@@ -159,16 +159,32 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
 <template>
   <Teleport to="body">
-    <div class="sheet-overlay" @click.self="emit('close')">
+    <div
+      class="sheet-overlay"
+      :style="isDragging || isClosing ? { '--sheet-backdrop-opacity': String(Math.max(0, 1 - dragOffset / 400)) } : undefined"
+      @click.self="emit('close')"
+    >
       <div
         ref="panelRef"
         class="sheet-panel payment-sheet"
+        :class="{ 'sheet-panel--dragging': isDragging }"
+        :style="dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined"
         aria-label="Payment dialog"
         role="dialog"
         aria-modal="true"
         tabindex="-1"
       >
-        <div class="sheet-grabber" />
+        <button
+          class="sheet-grabber-handle"
+          type="button"
+          aria-label="Drag down to close"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerCancel"
+        >
+          <span class="sheet-grabber" />
+        </button>
 
         <div class="sheet-scroll">
           <div class="payment-sheet__columns">
@@ -194,17 +210,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                   </button>
                 </div>
 
-                <select
-                  :value="store.selectedCustomerId ?? ''"
-                  class="sheet-input"
-                  aria-label="Select customer"
-                  @change="store.setSelectedCustomer(($event.target as HTMLSelectElement).value || null)"
-                >
-                  <option value="">Guest</option>
-                  <option v-for="customer in store.customers" :key="customer.id" :value="customer.id">
-                    {{ customer.name }}
-                  </option>
-                </select>
+                <AutocompleteSelect
+                  :model-value="store.selectedCustomerId ?? ''"
+                  label="Select customer"
+                  :options="store.customerOptions"
+                  @update:model-value="store.setSelectedCustomer($event || null)"
+                />
 
                 <div v-if="creatingCustomer" class="customer-panel__form">
                   <input
@@ -240,12 +251,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
               <!-- Payment method tabs -->
               <div class="segmented-control">
                 <button
-                  v-for="method in paymentMethods"
-                  :key="method.id"
+                  v-for="method in paymentMethodOptions"
+                  :key="method.value"
                   class="segment-button"
-                  :class="{ active: store.paymentMethod === method.id }"
+                  :class="{ active: store.paymentMethod === method.value }"
                   type="button"
-                  @click="store.setPaymentMethod(method.id)"
+                  @click="store.setPaymentMethod(method.value)"
                 >
                   {{ method.label }}
                 </button>
@@ -331,6 +342,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
   max-width: 700px;
 }
 
+@media (max-width: 720px) {
+  .sheet-panel.payment-sheet {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 .payment-sheet__columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -346,7 +370,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
 @media (max-width: 720px) {
   .payment-sheet__columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
