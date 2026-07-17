@@ -6,6 +6,8 @@
     { "source": "/landing", "destination": "/landing.html" },
     { "source": "/app",     "destination": "/app.html"     },
     { "source": "/app/(.*)", "destination": "/app.html"    },
+    { "source": "/store",   "destination": "/store.html"   },
+    { "source": "/store/(.*)", "destination": "/store.html" },
     { "source": "/",        "destination": "/index.html"   }
   ]
 }
