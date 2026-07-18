@@ -64,12 +64,6 @@ function onScroll(e: Event) {
   scrollTop.value = (e.target as HTMLElement).scrollTop
 }
 
-// Large-title nav bar collapse progress: 0 (expanded) → 1 (collapsed), driven
-// directly by list scroll position so the transition interpolates continuously
-// instead of snapping at a breakpoint. Matches iOS's ~40px collapse distance.
-const COLLAPSE_DISTANCE = 40
-const collapseProgress = computed(() => Math.min(1, Math.max(0, scrollTop.value / COLLAPSE_DISTANCE)))
-
 watch([searchQuery, modeFilter, availabilityFilter, sortBy, activeTab], () => {
   nextTick(() => {
     if (scrollEl.value) scrollEl.value.scrollTop = 0
@@ -401,24 +395,21 @@ async function confirmDeleteCategory(id: string) {
 
 <template>
   <div class="products-page">
-    <!-- ── Large-title nav bar: collapses as the list scrolls ─────────────── -->
-    <div class="p-navbar" :style="{ '--collapse': collapseProgress }">
-      <div class="p-navbar__row">
-        <span class="p-navbar__small-title" aria-hidden="true">Products</span>
-        <button
-          v-if="activeTab === 'products'"
-          class="p-navbar__trailing icon-button"
-          type="button"
-          aria-label="Add product"
-          @click="openAdd"
-        >
-          <Plus :size="20" />
-        </button>
+    <!-- ── Page header ──────────────────────────────────────────────────── -->
+    <div class="p-header">
+      <div class="p-header__titlewrap">
+        <h1 class="p-header__title">Products</h1>
+        <span class="p-header__count">{{ store.products.length }} products</span>
       </div>
-      <div class="p-navbar__large-wrap">
-        <h1 class="p-navbar__large-title">Products</h1>
-        <span class="p-navbar__count">{{ store.products.length }} products</span>
-      </div>
+      <button
+        v-if="activeTab === 'products'"
+        class="primary-button p-header__add"
+        type="button"
+        @click="openAdd"
+      >
+        <Plus :size="15" />
+        <span>Add product</span>
+      </button>
     </div>
 
     <!-- ── Products / Categories segmented control ─────────────────────────── -->

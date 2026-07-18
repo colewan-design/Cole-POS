@@ -2343,79 +2343,35 @@ button {
   padding: var(--space-4) 0 var(--space-8);
 }
 
-/* ── Large-title nav bar ────────────────────────────────────────────────── */
-/* --collapse (0→1) is driven by list scroll position; every transition below
-   uses the same iOS large-title easing so the bar reads as one interpolation
-   rather than a hard breakpoint swap. */
+/* ── Page header ────────────────────────────────────────────────────────── */
 
-.p-navbar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  /* Always opaque (matches the page background) so that if this ever ends up
-     stuck over scrolled content — e.g. on a short viewport where the toolbar
-     stack below it needs to scroll — it can never show a transparent
-     double-exposure of whatever scrolled underneath it. */
-  background: var(--bg-base);
-}
-
-.p-navbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--material-bar-bg);
-  backdrop-filter: var(--material-bar);
-  border-bottom: 0.5px solid color-mix(in srgb, var(--separator) calc(var(--collapse, 0) * 100%), transparent);
-  opacity: var(--collapse, 0);
-  transition: opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-.p-navbar__row {
-  position: relative;
+.p-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
+  gap: var(--space-4);
 }
 
-.p-navbar__small-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font: 600 17px/1.2 var(--font-sans);
-  color: var(--text-primary);
-  opacity: var(--collapse, 0);
-  transition: opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
-  pointer-events: none;
-}
-
-.p-navbar__trailing {
-  margin-left: auto;
-  color: var(--accent);
-}
-
-.p-navbar__large-wrap {
+.p-header__titlewrap {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  max-height: calc(52px * (1 - var(--collapse, 0)));
-  opacity: calc(1 - var(--collapse, 0));
-  overflow: hidden;
-  transition:
-    max-height var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1),
-    opacity var(--dur-fast) cubic-bezier(0.25, 0.1, 0.25, 1);
+  min-width: 0;
 }
 
-.p-navbar__large-title {
-  margin: var(--space-1) 0 0;
-  font: 700 34px/1.2 var(--font-sans);
-  color: var(--text-primary);
+.p-header__title {
+  margin: 0;
+  font: var(--type-title1);
 }
 
-.p-navbar__count {
+.p-header__count {
   color: var(--text-tertiary);
   font: var(--type-subhead);
+  white-space: nowrap;
+}
+
+.p-header__add {
+  flex: none;
 }
 
 /* ── Products / Categories segmented control ───────────────────────────── */
@@ -2680,9 +2636,9 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0;                                    /* override surface-panel */
-  /* Budget accounts for the large-title nav bar + segmented control above it
-     (~170px) on top of the existing chips/search/sort toolbar stack. */
-  height: clamp(280px, calc(100svh - 460px), 900px);
+  /* Budget accounts for the compact header + segmented control above it
+     (~110px) on top of the existing chips/search/sort toolbar stack. */
+  height: clamp(280px, calc(100svh - 380px), 900px);
   border-radius: var(--radius-xl);
 }
 
@@ -3306,9 +3262,9 @@ button {
     gap: var(--space-2);
   }
 
-  /* Tighter list height on phone (still budgeted for navbar + segctrl above it) */
+  /* Tighter list height on phone (still budgeted for header + segctrl above it) */
   .plist {
-    height: clamp(280px, calc(100svh - 430px), 700px);
+    height: clamp(280px, calc(100svh - 350px), 700px);
   }
 
   /* Slightly narrower price column */
