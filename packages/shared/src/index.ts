@@ -1,6 +1,7 @@
 export type BusinessMode = 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'
 export type ProductKind = 'standard' | 'weighted'
 export type OrderType = 'dine_in' | 'takeaway'
+export type FulfillmentMethod = 'pickup' | 'delivery'
 export type OrderStatus = 'preparing' | 'ready' | 'served'
 export type PaymentMethod = 'cash' | 'card' | 'ewallet'
 export type OrderChannel = 'in_person' | 'online'
@@ -42,6 +43,7 @@ export type AppEventType =
   | 'payment_sheet_opened'
   | 'payment_method_selected'
   | 'order_completed'
+  | 'order_voided'
   | 'settings_saved'
   | 'low_stock_alert'
 
@@ -75,6 +77,29 @@ export interface Customer {
   notes?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  contact: string
+  categoryIds: string[]
+  leadTimeDays: number
+  orderWindow: string
+  createdAt: string
+  updatedAt: string
+}
+
+// A lightweight "this stock is already on order" flag for the Suppliers
+// reorder queue — not a full purchase-order/receiving workflow, just enough
+// to stop the same shortage from being reordered twice while it's in transit.
+export interface ReorderMark {
+  id: string
+  productId: string
+  supplierId: string | null
+  quantity: number
+  markedByUserId?: string | null
+  markedAt: string
 }
 
 export interface GuestContact {
@@ -130,6 +155,20 @@ export interface OrderSummary {
   channel?: OrderChannel
   paymentStatus?: PaymentStatus
   guestContact?: GuestContact | null
+  // Only meaningful for channel: 'online' — in-person orders have neither.
+  fulfillmentMethod?: FulfillmentMethod
+  deliveryAddress?: string | null
+  // Absent/null on every non-voided order. A void reverses the whole order —
+  // inventory restored, excluded from revenue — there is no partial/line-item
+  // refund yet.
+  voidedAt?: string | null
+  voidedByUserId?: string | null
+  voidReason?: string | null
+  // Set when staff mark an online cash/e-wallet order as paid (see
+  // SettleOnlinePaymentSheet) — there is no payment gateway, so this is an
+  // audit trail for a manual confirmation, not proof a charge succeeded.
+  paymentConfirmedAt?: string | null
+  paymentConfirmedByUserId?: string | null
 }
 
 export interface CashMovementSummary {
@@ -174,7 +213,15 @@ export interface RoleDefinition {
   id: string
   name: string
   permissions: Record<AppPageKey, boolean>
+  // Separate from page access: whether this role can add employees, assign
+  // roles, and edit non-locked role definitions. Absent/undefined on older
+  // saved roles means false. Granting the 'admin' role, or granting this
+  // flag itself, stays owner-only regardless of who holds it.
+  canManageStaff?: boolean
 }
+
+export const ownerPageKeys = ['employees', 'integrations', 'diagnostics'] as const
+export type OwnerPageKey = (typeof ownerPageKeys)[number]
 
 export interface UserAccount {
   id: string
@@ -210,6 +257,7 @@ export interface CatalogSnapshot {
 export type CreateProductInput = Omit<Product, 'id'>
 export type CreateCategoryInput = { name: string }
 export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes'>
+export type CreateSupplierInput = Pick<Supplier, 'name' | 'contact' | 'categoryIds' | 'leadTimeDays' | 'orderWindow'>
 
 export interface CreateOrderInput {
   businessMode: BusinessMode
@@ -252,21 +300,25 @@ export const defaultRoles: RoleDefinition[] = [
     id: 'admin',
     name: 'Admin',
     permissions: createPermissions([...appPageKeys]),
+    canManageStaff: true,
   },
   {
     id: 'manager',
     name: 'Manager',
-    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers', 'inventory', 'reports', 'register', 'settings', 'tables']),
+    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers', 'employees', 'inventory', 'reports', 'register', 'settings', 'tables']),
+    canManageStaff: true,
   },
   {
     id: 'cashier',
     name: 'Cashier',
     permissions: createPermissions(['dashboard', 'sales', 'orders', 'register', 'tables']),
+    canManageStaff: false,
   },
   {
     id: 'guest',
     name: 'Guest',
-    permissions: createPermissions(['dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers', 'inventory', 'reports', 'register', 'settings', 'tables']),
+    permissions: createPermissions([]),
+    canManageStaff: false,
   },
 ]
 

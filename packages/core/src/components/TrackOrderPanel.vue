@@ -15,7 +15,7 @@ onMounted(() => {
 
 const trackedOrders = computed(() =>
   [...store.orders, ...store.onlineOrders]
-    .filter((order) => order.businessMode === store.settings.businessMode)
+    .filter((order) => order.businessMode === store.settings.businessMode && !order.voidedAt)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8),
 )

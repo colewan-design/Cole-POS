@@ -204,6 +204,7 @@ onUnmounted(() => {
   inset: 20px auto 20px 20px;
   width: 248px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr auto;
   gap: var(--space-4);
   padding: var(--space-5);

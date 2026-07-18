@@ -61,7 +61,9 @@ function inBounds(order: OrderSummary, start: Date, end: Date) {
 }
 
 const bounds = computed(() => getBounds(range.value))
-const reportOrders = computed(() => store.orders.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)))
+const reportOrders = computed(() =>
+  store.orders.filter((order) => !order.voidedAt && inBounds(order, bounds.value.start, bounds.value.end)),
+)
 
 const grossSales = computed(() => reportOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
 const taxCollected = computed(() => reportOrders.value.reduce((sum, order) => sum + order.taxCents, 0))

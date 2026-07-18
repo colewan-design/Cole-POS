@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore'
+import { CheckCircle2, Clock3, ReceiptText } from '@lucide/vue'
 import { formatCurrency, orderStatusLabel, type OrderItemSummary, type OrderStatus } from '@pos/shared/index'
 import { ORG_SLUG, STORE_CODE, db } from '@pos/web/storefront/firebase'
 
@@ -18,30 +19,40 @@ const items = ref<OrderItemSummary[]>([])
 const notFound = ref(false)
 let unsubscribe: (() => void) | null = null
 
-onMounted(async () => {
+onMounted(() => {
   const orderRef = doc(db, 'organizations', ORG_SLUG, 'stores', STORE_CODE, 'orders', props.orderId)
 
-  // Items never change after checkout — a one-time read is enough.
-  const itemsSnap = await getDocs(collection(orderRef, 'items'))
-  items.value = itemsSnap.docs.map((itemDoc) => {
-    const data = itemDoc.data() as { productId: string | null; productName: string; quantity: number; unitPriceCents: number; lineTotalCents: number }
-    return {
-      productId: data.productId ?? '',
-      name: data.productName,
-      quantity: data.quantity,
-      unitPriceCents: data.unitPriceCents,
-      lineTotalCents: data.lineTotalCents,
-    }
-  })
+  // Fetched independently of the status listener below: a failure here (flaky
+  // network, a since-deleted order) must not stop the live status listener
+  // from attaching — the customer still needs to see status updates even if
+  // the item list can't be shown.
+  getDocs(collection(orderRef, 'items'))
+    .then((itemsSnap) => {
+      items.value = itemsSnap.docs.map((itemDoc) => {
+        const data = itemDoc.data() as {
+          productId: string | null
+          productName: string
+          quantity: number
+          unitPriceCents: number
+          lineTotalCents: number
+        }
+        return {
+          productId: data.productId ?? '',
+          name: data.productName,
+          quantity: data.quantity,
+          unitPriceCents: data.unitPriceCents,
+          lineTotalCents: data.lineTotalCents,
+        }
+      })
+    })
+    .catch((err) => console.error('Failed to load order items:', err))
 
-  // Status can change while this page is open (staff marking it ready/served),
-  // so this one listens live — unlike the staff app's pull-only sync, this is
-  // a single scoped doc a customer is actively watching.
   unsubscribe = onSnapshot(orderRef, (snap) => {
     if (!snap.exists()) {
       notFound.value = true
       return
     }
+
     const data = snap.data() as { ticketNumber: string; status: OrderStatus; totalCents: number; paymentStatus?: string }
     order.value = {
       ticketNumber: data.ticketNumber,
@@ -58,73 +69,178 @@ onUnmounted(() => unsubscribe?.())
 <template>
   <div class="order-status">
     <p v-if="notFound" class="order-status__state">We couldn't find that order.</p>
-    <template v-else-if="order">
-      <p class="order-status__eyebrow">Order {{ order.ticketNumber }}</p>
-      <h1 class="order-status__status">{{ orderStatusLabel(order.status) }}</h1>
-      <p class="order-status__note">
-        Pay <strong>{{ formatCurrency(order.totalCents) }}</strong> when you pick up in store.
-      </p>
+    <p v-else-if="!order" class="order-status__state">Loading your order…</p>
 
-      <ul class="order-status__items">
-        <li v-for="item in items" :key="item.productId" class="order-status__item">
-          <span>{{ item.quantity }}&times; {{ item.name }}</span>
-          <span>{{ formatCurrency(item.lineTotalCents) }}</span>
-        </li>
-      </ul>
+    <template v-else>
+      <section class="order-status__hero">
+        <div class="order-status__icon">
+          <CheckCircle2 :size="26" />
+        </div>
+        <p class="order-status__eyebrow">Order {{ order.ticketNumber }}</p>
+        <h1>{{ orderStatusLabel(order.status) }}</h1>
+        <p class="order-status__copy">
+          Your order is saved in the store queue. Please prepare
+          <strong>{{ formatCurrency(order.totalCents) }}</strong>
+          for pickup payment.
+        </p>
+      </section>
 
-      <RouterLink to="/" class="order-status__back">Order something else</RouterLink>
+      <section class="order-status__details">
+        <div class="order-status__detail">
+          <Clock3 :size="17" />
+          <div>
+            <strong>Status update</strong>
+            <span>Open this page anytime to watch the live kitchen/store progress.</span>
+          </div>
+        </div>
+        <div class="order-status__detail">
+          <ReceiptText :size="17" />
+          <div>
+            <strong v-if="order.paymentStatus === 'paid'">Payment confirmed</strong>
+            <strong v-else>Awaiting payment confirmation</strong>
+            <span v-if="order.paymentStatus === 'paid'">The store has confirmed your payment for this order.</span>
+            <span v-else>No online charge was collected. Pay in person, and the store will confirm here once received.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="order-status__items">
+        <h2>Items</h2>
+        <article v-for="item in items" :key="`${item.productId}-${item.name}`" class="order-status__item">
+          <div>
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.quantity }} x {{ formatCurrency(item.unitPriceCents) }}</span>
+          </div>
+          <strong>{{ formatCurrency(item.lineTotalCents) }}</strong>
+        </article>
+      </section>
+
+      <RouterLink to="/" class="order-status__back">Continue shopping</RouterLink>
     </template>
-    <p v-else class="order-status__state">Loading order…</p>
   </div>
 </template>
 
 <style scoped>
-.order-status__eyebrow {
-  margin: 0 0 4px;
-  color: #8a8f98;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.order-status {
+  max-width: 620px;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-4);
 }
 
-.order-status__status {
-  margin: 0 0 12px;
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
+.order-status__state {
+  padding: 96px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.order-status__hero,
+.order-status__details,
+.order-status__items {
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+}
+
+.order-status__hero {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.order-status__icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-text-on);
+}
+
+.order-status__eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12.5px;
   font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.order-status__hero h1 {
+  margin: 0;
+  font-size: 1.6rem;
   letter-spacing: -0.02em;
 }
 
-.order-status__note {
-  margin: 0 0 28px;
-  color: #5b5f66;
+.order-status__copy {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.order-status__details {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.order-status__detail {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  color: var(--text-secondary);
+}
+
+.order-status__detail strong,
+.order-status__detail span {
+  display: block;
+}
+
+.order-status__detail strong {
+  color: var(--text-primary);
+  margin-bottom: 2px;
 }
 
 .order-status__items {
-  list-style: none;
-  margin: 0 0 28px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.order-status__items h2 {
+  margin: 0;
+  font-size: 1rem;
 }
 
 .order-status__item {
   display: flex;
+  align-items: start;
   justify-content: space-between;
-  padding: 12px 16px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  background: #fff;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--separator);
+}
+
+.order-status__item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.order-status__item span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .order-status__back {
-  color: #ea5b1c;
-  font-weight: 700;
+  justify-self: start;
+  padding: 11px var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--accent);
   text-decoration: none;
-}
-
-.order-status__state {
-  color: #5b5f66;
+  font-weight: 700;
+  font-size: 13.5px;
 }
 </style>

@@ -1,6 +1,6 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { reactive } from 'vue'
-import type { Category, Product } from '@pos/shared/index'
+import { demoCategories, demoProducts, type Category, type Product } from '@pos/shared/index'
 import { BUSINESS_MODE, ORG_SLUG, db } from '@pos/web/storefront/firebase'
 
 interface FsCategory {
@@ -24,9 +24,6 @@ interface FsProduct {
   lowStockThreshold: number | null
 }
 
-// Mirrors mapFsProduct in packages/data/src/firebase-sync.ts, but reads via a
-// bare unauthenticated Firestore client instead of the staff sync session —
-// see firebase.ts for why this can't reuse that authenticated code path.
 function mapProduct(id: string, data: FsProduct): Product {
   const stockQty = data.trackInventory && data.stockQty != null ? Number(data.stockQty) : undefined
   return {
@@ -52,27 +49,46 @@ export interface StorefrontCatalog {
   products: Product[]
 }
 
-export async function loadStorefrontCatalog(): Promise<StorefrontCatalog> {
-  const [categoriesSnap, productsSnap] = await Promise.all([
-    getDocs(collection(db, 'organizations', ORG_SLUG, 'categories')),
-    getDocs(
-      query(
-        collection(db, 'organizations', ORG_SLUG, 'products'),
-        where('businessModes', 'array-contains', BUSINESS_MODE),
-      ),
-    ),
-  ])
-
-  const categories = categoriesSnap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    name: (docSnap.data() as FsCategory).name,
-  }))
-
-  const products = productsSnap.docs
-    .map((docSnap) => mapProduct(docSnap.id, docSnap.data() as FsProduct))
-    .filter((product) => !product.outOfStock)
-
+function demoStorefrontCatalog(): StorefrontCatalog {
+  const products = demoProducts.filter((product) => product.businessModes.includes(BUSINESS_MODE) && !product.outOfStock)
+  const categoryIds = new Set(products.map((product) => product.categoryId))
+  const categories = demoCategories.filter((category) => categoryIds.has(category.id))
   return { categories, products }
+}
+
+export async function loadStorefrontCatalog(): Promise<StorefrontCatalog> {
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error('catalog-timeout')), 6000)
+    })
+
+    const remoteCatalog = Promise.all([
+      getDocs(collection(db, 'organizations', ORG_SLUG, 'categories')),
+      getDocs(
+        query(
+          collection(db, 'organizations', ORG_SLUG, 'products'),
+          where('businessModes', 'array-contains', BUSINESS_MODE),
+        ),
+      ),
+    ]).then(([categoriesSnap, productsSnap]) => {
+      const categories = categoriesSnap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        name: (docSnap.data() as FsCategory).name,
+      }))
+
+      const products = productsSnap.docs
+        .map((docSnap) => mapProduct(docSnap.id, docSnap.data() as FsProduct))
+        .filter((product) => !product.outOfStock)
+
+      return { categories, products }
+    })
+
+    const catalog = await Promise.race([remoteCatalog, timeout])
+    if (catalog.products.length > 0) return catalog
+    return demoStorefrontCatalog()
+  } catch {
+    return demoStorefrontCatalog()
+  }
 }
 
 interface StorefrontCatalogState extends StorefrontCatalog {
@@ -80,8 +96,6 @@ interface StorefrontCatalogState extends StorefrontCatalog {
   error: string
 }
 
-// Module-level cache (same pattern as cart.ts) so the header nav and the
-// catalog page can share one Firestore read instead of loading it twice.
 const state = reactive<StorefrontCatalogState>({ categories: [], products: [], loading: true, error: '' })
 let loadStarted = false
 
@@ -92,9 +106,6 @@ export function useStorefrontCatalog(): StorefrontCatalogState {
       .then((catalog) => {
         state.categories = catalog.categories
         state.products = catalog.products
-      })
-      .catch(() => {
-        state.error = "Couldn't load the menu — please refresh and try again."
       })
       .finally(() => {
         state.loading = false

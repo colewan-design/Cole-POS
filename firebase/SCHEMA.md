@@ -10,7 +10,7 @@ organizations/{orgSlug}                                    doc id = org slug
   { name: string, firstAdminClaimed: boolean, createdAt: Timestamp }
 
 organizations/{orgSlug}/stores/{storeCode}                 doc id = store code
-  { name: string, createdAt: Timestamp }
+  { name: string, createdAt: Timestamp, pairingCode: string, businessMode: string, address: string }
 
 organizations/{orgSlug}/roles/{roleKey}
   { name: string, permissions: Record<AppPageKey, boolean>, deletedAt: Timestamp | null }
@@ -55,6 +55,9 @@ organizations/{orgSlug}/stores/{storeCode}/syncEvents/{eventId}              doc
 users/{uid}                                                 top-level, doc id = Firebase Auth uid
   { organizationId: string, fullName: string, username: string, status: string,
     roleKey: string, createdAt: Timestamp }
+
+appReleases/{appId}                                         top-level, doc id = e.g. "storefront-android"
+  { versionCode: number, versionName: string, apkUrl: string, notes: string | null }
 ```
 
 Notes:
@@ -68,6 +71,14 @@ Notes:
   (`VITE_POS_STORE_CODE`).
 - `deletedAt` fields must be written as literal `null` (not omitted) — `firestore.rules`/queries
   that filter `where('deletedAt', '==', null)` (used for `roles`) require the field to exist.
+- `stores.pairingCode` is a short, developer-assigned code unique across *all* stores of *every*
+  org (not just within one org) — the mobile storefront app is a single shared build, and a
+  customer types this code in on first launch to resolve which org/store/businessMode to show
+  (see `resolveStoreCode` in `functions/src/index.ts`, which does a `collectionGroup('stores')`
+  query on it — needs the `firestore.indexes.json` collection-group index on `pairingCode`).
+  `stores.businessMode` is the Firestore-side counterpart of the staff app's local
+  `AppSettings.businessMode` — the storefront has no authenticated way to read the latter, so the
+  store doc carries its own copy for `resolveStoreCode` to hand back.
 
 ## Bootstrap (out-of-band provisioning)
 
@@ -78,8 +89,13 @@ Supabase `schema.sql`. Example seed values:
 
 ```
 organizations/demo-coffee = { name: "Demo Coffee", firstAdminClaimed: false, createdAt: <now> }
-organizations/demo-coffee/stores/main = { name: "Main Branch", createdAt: <now> }
+organizations/demo-coffee/stores/main = { name: "Main Branch", createdAt: <now>,
+  pairingCode: "DEMO01", businessMode: "coffee-shop", address: "123 Market Street" }
 ```
+
+Also seed `appReleases/storefront-android` once a build is published (see above), and update it by
+hand on each new release — the mobile app's Settings screen polls it for its update-available
+indicator.
 
 The first user to register against an org becomes `admin` (flips `firstAdminClaimed` to `true`
 inside a transaction); everyone after becomes `cashier`.

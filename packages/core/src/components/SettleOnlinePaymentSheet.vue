@@ -2,12 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { formatCurrency, paymentMethodOptions, type OrderSummary, type PaymentMethod } from '@pos/shared/index'
 import NumericKeypad from '@pos/core/components/NumericKeypad.vue'
+import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useSheetDrag } from '@pos/core/utils/sheetDrag'
 
 const props = defineProps<{ order: OrderSummary }>()
 const emit = defineEmits<{ close: []; settled: [] }>()
 const store = usePosStore()
+const auth = useAuthStore()
 
 const { dragOffset, isDragging, isClosing, onPointerDown, onPointerMove, onPointerUp, onPointerCancel } = useSheetDrag({
   onDismiss: () => emit('close'),
@@ -16,7 +18,9 @@ const { dragOffset, isDragging, isClosing, onPointerDown, onPointerMove, onPoint
 const panelRef = ref<HTMLElement | null>(null)
 const confirming = ref(false)
 const errorMessage = ref('')
-const paymentMethod = ref<PaymentMethod>('cash')
+// Pre-selects the customer's stated preference from checkout (see
+// createOnlineOrder) — staff can still change it before confirming.
+const paymentMethod = ref<PaymentMethod>(props.order.paymentMethod === 'ewallet' ? 'ewallet' : 'cash')
 const tenderedInput = ref('')
 
 const tenderedCents = computed(() => {
@@ -86,6 +90,7 @@ async function handleConfirm() {
       paymentMethod: paymentMethod.value,
       tenderedCents: paymentMethod.value === 'cash' ? tenderedCents.value : props.order.totalCents,
       changeCents: changeCents.value,
+      userId: auth.currentUser?.id ?? null,
     })
     emit('settled')
   } catch {
@@ -152,6 +157,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 <strong class="customer-panel__name">{{ order.guestContact?.name ?? order.customerName }}</strong>
                 <span v-if="order.guestContact?.phone || order.guestContact?.email" class="customer-panel__contact">
                   {{ order.guestContact?.phone || order.guestContact?.email }}
+                </span>
+                <span v-if="order.fulfillmentMethod === 'delivery'" class="customer-panel__fulfillment customer-panel__fulfillment--delivery">
+                  Deliver to: {{ order.deliveryAddress }}
+                </span>
+                <span v-else-if="order.fulfillmentMethod === 'pickup'" class="customer-panel__fulfillment">
+                  Pickup at store
                 </span>
               </div>
 
@@ -280,6 +291,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 .customer-panel__contact {
   color: var(--text-secondary);
   font: var(--type-caption);
+}
+
+.customer-panel__fulfillment {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.customer-panel__fulfillment--delivery {
+  color: var(--accent, #b45309);
+  font-weight: 600;
 }
 
 .customer-panel__error {

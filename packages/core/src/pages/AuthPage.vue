@@ -20,6 +20,7 @@ const registerForm = ref({
 })
 const loginPasswordVisible = ref(false)
 const registerPasswordVisible = ref(false)
+const showGuestAccess = computed(() => auth.canUseGuestAccess)
 
 const heading = computed(() => (mode.value === 'login' ? 'Welcome back' : 'Create your account'))
 const subtitle = computed(() =>
@@ -174,7 +175,7 @@ onMounted(async () => {
 
       <p v-if="auth.authError" class="auth-error">{{ auth.authError }}</p>
 
-      <div class="auth-guest">
+      <div v-if="showGuestAccess" class="auth-guest">
         <div class="auth-divider" role="separator"><span>or</span></div>
         <button class="auth-guest-button" type="button" @click="continueAsGuest">
           <UserRound :size="16" />

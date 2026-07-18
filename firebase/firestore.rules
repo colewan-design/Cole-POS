@@ -18,7 +18,11 @@ service cloud.firestore {
         && request.resource.data.firstAdminClaimed == true;
 
       match /stores/{storeId} {
-        allow read: if signedIn();
+        // pairingCode lives on this doc and is the storefront's de facto access
+        // secret (see SCHEMA.md) — must not be readable by other orgs' staff.
+        // Pairing-code lookup itself goes through resolve-store-code.ts (Admin
+        // SDK, bypasses rules), so this stays org-scoped with no functional loss.
+        allow read: if signedIn() && orgId == userOrgId();
         allow write: if false;
       }
       match /roles/{roleKey} {
@@ -39,7 +43,15 @@ service cloud.firestore {
         // single-doc "get" is public — "list" stays staff-only, so orders can
         // never be browsed/enumerated by an outsider.
         allow get: if true;
-        match /items/{itemId} { allow read, write: if signedIn() && orgId == userOrgId(); }
+        match /items/{itemId} {
+          // The order ID is already the capability token for the parent doc's
+          // public `get` above; a signed-out customer reading the line items
+          // of an order they already know the ID of leaks nothing new. This
+          // was previously staff-only, which broke the public tracking page —
+          // getDocs() on this subcollection threw for anonymous visitors.
+          allow get, list: if true;
+          allow write: if signedIn() && orgId == userOrgId();
+        }
       }
       match /stores/{storeId}/inventoryLevels/{productId} {
         allow read, write: if signedIn() && orgId == userOrgId();
@@ -58,13 +70,24 @@ service cloud.firestore {
       }
     }
 
+    // Version pointer the mobile app polls for its own update-available
+    // indicator (Settings screen) — see apps/mobile/src/storefront/updateCheck.ts.
+    // Public and read-only; the developer updates it by hand on each release.
+    match /appReleases/{appId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /users/{uid} {
       allow read: if signedIn() && (uid == request.auth.uid || resource.data.organizationId == userOrgId());
       allow create: if signedIn() && uid == request.auth.uid && request.resource.data.organizationId is string;
       allow update: if signedIn() && (
-          (uid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'status']))
+          // Self-service is limited to display name — status is an admin-only
+          // lever (e.g. deactivating an account) and must not be self-editable,
+          // or a disabled user could just flip themselves back to active.
+          (uid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName']))
           || (isAdmin() && resource.data.organizationId == userOrgId()
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['roleKey']))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['roleKey', 'status']))
         );
       allow delete: if false;
     }

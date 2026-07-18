@@ -17,15 +17,18 @@ import {
   type CreateCategoryInput,
   type CreateOrderInput,
   type CreateProductInput,
+  type CreateSupplierInput,
   type CreateTableInput,
   type Customer,
   type OrderStatus,
   type OrderSummary,
   type PaymentMethod,
   type Product,
+  type ReorderMark,
   type RestaurantTable,
   type RoleDefinition,
   type ShiftSummary,
+  type Supplier,
   type UserAccount,
 } from '@pos/shared/index'
 import {
@@ -50,10 +53,11 @@ export interface PosRepository {
   loadShiftHistory(): Promise<ShiftSummary[]>
   saveOrder(input: CreateOrderInput): Promise<OrderSummary>
   updateOrderStatus(orderId: string, status: OrderStatus): Promise<OrderSummary>
+  voidOrder(orderId: string, input: { userId?: string | null; reason?: string | null }): Promise<OrderSummary>
   loadOnlineOrders(): Promise<OrderSummary[]>
   settleOrderPayment(
     orderId: string,
-    input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+    input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
   ): Promise<OrderSummary>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
@@ -62,6 +66,18 @@ export interface PosRepository {
   saveTable(input: CreateTableInput): Promise<RestaurantTable>
   updateTable(table: RestaurantTable): Promise<RestaurantTable>
   deleteTable(id: string): Promise<void>
+  loadSuppliers(): Promise<Supplier[]>
+  saveSupplier(input: CreateSupplierInput): Promise<Supplier>
+  updateSupplier(supplier: Supplier): Promise<Supplier>
+  deleteSupplier(id: string): Promise<void>
+  loadReorderMarks(): Promise<ReorderMark[]>
+  markReorder(input: {
+    productId: string
+    supplierId: string | null
+    quantity: number
+    userId?: string | null
+  }): Promise<ReorderMark>
+  clearReorderMark(id: string): Promise<void>
   openShift(input: {
     openingCashCents: number
     userId?: string | null
@@ -93,6 +109,12 @@ export interface PosRepository {
     username: string
     password: string
   }): Promise<{ user: UserAccount; session: AuthSession } | null>
+  createStaffAccount(input: {
+    fullName: string
+    username: string
+    password: string
+    roleId: string
+  }): Promise<UserAccount>
   updateUserRole(userId: string, roleId: string): Promise<void>
   loadRoles(): Promise<RoleDefinition[]>
   saveRoles(roles: RoleDefinition[]): Promise<void>
@@ -204,6 +226,8 @@ const storageKeys = {
   categories: 'pos.categories',
   customers: 'pos.customers',
   tables: 'pos.tables',
+  suppliers: 'pos.suppliers',
+  reorderMarks: 'pos.reorder-marks',
   users: 'pos.users',
   roles: 'pos.roles',
   session: 'pos.session',
@@ -410,18 +434,69 @@ function normalizeFirebaseSyncConfig(
   }
 }
 
+// Salted PBKDF2, not a single unsalted SHA-256 round — a leaked users list
+// (e.g. from a device backup) can no longer be reversed with a rainbow table,
+// and two users with the same password no longer produce the same hash.
+const PBKDF2_ITERATIONS = 150_000
+const PBKDF2_PREFIX = 'pbkdf2'
+
+function requireSubtleCrypto(): SubtleCrypto {
+  if (typeof window === 'undefined' || !window.crypto?.subtle) {
+    // No silent plaintext fallback: an insecure context (non-HTTPS, non-Capacitor)
+    // must fail loudly rather than store/compare passwords in the clear.
+    throw new Error('Password hashing requires a secure context (HTTPS or the packaged app) and is unavailable here.')
+  }
+  return window.crypto.subtle
+}
+
+function bytesToHex(bytes: Uint8Array<ArrayBuffer>): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  }
+  return bytes
+}
+
+async function deriveHash(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<string> {
+  const subtle = requireSubtleCrypto()
+  const keyMaterial = await subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, keyMaterial, 256)
+  return bytesToHex(new Uint8Array(bits))
+}
+
 async function hashPassword(value: string): Promise<string> {
   const normalized = value.trim()
+  requireSubtleCrypto()
+  const salt = window.crypto.getRandomValues(new Uint8Array(16))
+  const hash = await deriveHash(normalized, salt, PBKDF2_ITERATIONS)
+  return `${PBKDF2_PREFIX}$${PBKDF2_ITERATIONS}$${bytesToHex(salt)}$${hash}`
+}
 
-  if (typeof window !== 'undefined' && window.crypto?.subtle) {
-    const encoded = new TextEncoder().encode(normalized)
-    const digest = await window.crypto.subtle.digest('SHA-256', encoded)
-    return Array.from(new Uint8Array(digest))
-      .map((chunk) => chunk.toString(16).padStart(2, '0'))
-      .join('')
+// Returns whether `value` matches `stored`, and whether `stored` should be
+// rewritten (an iteration-count bump, or a one-time upgrade from the old
+// unsalted-SHA-256 format that predates this fix).
+async function verifyPassword(value: string, stored: string): Promise<{ valid: boolean; upgradedHash: string | null }> {
+  const normalized = value.trim()
+
+  if (stored.startsWith(`${PBKDF2_PREFIX}$`)) {
+    const [, iterationsRaw, saltHex, expectedHex] = stored.split('$')
+    const iterations = Number(iterationsRaw)
+    const candidate = await deriveHash(normalized, hexToBytes(saltHex), iterations)
+    const valid = candidate === expectedHex
+    const upgradedHash = valid && iterations !== PBKDF2_ITERATIONS ? await hashPassword(normalized) : null
+    return { valid, upgradedHash }
   }
 
-  return normalized
+  // Legacy accounts: a bare unsalted SHA-256 hex digest. Verify against that
+  // scheme once, then transparently upgrade the stored hash on success.
+  const subtle = requireSubtleCrypto()
+  const legacyDigest = await subtle.digest('SHA-256', new TextEncoder().encode(normalized))
+  const valid = bytesToHex(new Uint8Array(legacyDigest)) === stored
+  return { valid, upgradedHash: valid ? await hashPassword(normalized) : null }
 }
 
 function defaultDeviceName() {
@@ -1342,6 +1417,48 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return updated
     },
 
+    async voidOrder(orderId, input) {
+      const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
+      const index = orders.findIndex((entry) => entry.id === orderId)
+      if (index === -1) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+      if (orders[index].voidedAt) {
+        return orders[index]
+      }
+
+      const updated = normalizeOrder({
+        ...orders[index],
+        voidedAt: new Date().toISOString(),
+        voidedByUserId: input.userId ?? null,
+        voidReason: input.reason?.trim() || null,
+      })
+      const next = orders.slice()
+      next[index] = updated
+      await store.write(storageKeys.orders, next)
+
+      // Mirrors saveOrder()'s shift-tally update above, with the same
+      // limitation: orders aren't tagged with the shift they were rung on, so
+      // this only reverses against whichever shift is open right now — a
+      // no-op if none is open, or if the original shift has since closed.
+      await updateCachedShift((current) => {
+        if (!current || current.closedAt) {
+          return current
+        }
+
+        const isCash = updated.paymentMethod === 'cash'
+        return {
+          ...current,
+          cashSalesCents: current.cashSalesCents - (isCash ? updated.totalCents : 0),
+          expectedCashCents: current.expectedCashCents - (isCash ? updated.totalCents : 0),
+          totalSalesCents: current.totalSalesCents - updated.totalCents,
+          orderCount: Math.max(0, current.orderCount - 1),
+        }
+      })
+
+      return updated
+    },
+
     // Online orders are written directly to Firestore by the createOnlineOrder
     // Cloud Function, not by this device — unlike in-person sales, they aren't
     // in the local cache/outbox, so they need their own pull. Requires online
@@ -1463,6 +1580,86 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       await store.write(
         storageKeys.tables,
         tables.filter((table) => table.id !== id),
+      )
+    },
+
+    async loadSuppliers() {
+      return store.read<Supplier[]>(storageKeys.suppliers, [])
+    },
+
+    async saveSupplier(input) {
+      const timestamp = new Date().toISOString()
+      const supplier: Supplier = {
+        id: crypto.randomUUID(),
+        name: input.name.trim(),
+        contact: input.contact.trim(),
+        categoryIds: input.categoryIds,
+        leadTimeDays: input.leadTimeDays,
+        orderWindow: input.orderWindow.trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+
+      const suppliers = await store.read<Supplier[]>(storageKeys.suppliers, [])
+      await store.write(storageKeys.suppliers, [...suppliers, supplier])
+      return supplier
+    },
+
+    async updateSupplier(supplier) {
+      const suppliers = await store.read<Supplier[]>(storageKeys.suppliers, [])
+      const existing = suppliers.find((entry) => entry.id === supplier.id)
+      const nextSupplier: Supplier = {
+        ...supplier,
+        name: supplier.name.trim(),
+        contact: supplier.contact.trim(),
+        orderWindow: supplier.orderWindow.trim(),
+        createdAt: existing?.createdAt ?? supplier.createdAt,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await store.write(
+        storageKeys.suppliers,
+        suppliers.map((entry) => (entry.id === nextSupplier.id ? nextSupplier : entry)),
+      )
+      return nextSupplier
+    },
+
+    async deleteSupplier(id) {
+      const suppliers = await store.read<Supplier[]>(storageKeys.suppliers, [])
+      await store.write(
+        storageKeys.suppliers,
+        suppliers.filter((supplier) => supplier.id !== id),
+      )
+    },
+
+    async loadReorderMarks() {
+      return store.read<ReorderMark[]>(storageKeys.reorderMarks, [])
+    },
+
+    async markReorder(input) {
+      const mark: ReorderMark = {
+        id: crypto.randomUUID(),
+        productId: input.productId,
+        supplierId: input.supplierId,
+        quantity: input.quantity,
+        markedByUserId: input.userId ?? null,
+        markedAt: new Date().toISOString(),
+      }
+
+      const marks = await store.read<ReorderMark[]>(storageKeys.reorderMarks, [])
+      // One active mark per product — a re-mark replaces rather than stacks.
+      await store.write(
+        storageKeys.reorderMarks,
+        [mark, ...marks.filter((entry) => entry.productId !== input.productId)],
+      )
+      return mark
+    },
+
+    async clearReorderMark(id) {
+      const marks = await store.read<ReorderMark[]>(storageKeys.reorderMarks, [])
+      await store.write(
+        storageKeys.reorderMarks,
+        marks.filter((entry) => entry.id !== id),
       )
     },
 
@@ -1754,11 +1951,20 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       const users = await store.read<UserAccount[]>(storageKeys.users, [])
       const normalizedUsername = username.trim().toLowerCase()
-      const passwordHash = await hashPassword(password)
       const user = users.find((entry) => entry.username === normalizedUsername)
 
-      if (!user || user.passwordHash !== passwordHash) {
+      if (!user) {
         return null
+      }
+
+      const { valid, upgradedHash } = await verifyPassword(password, user.passwordHash)
+      if (!valid) {
+        return null
+      }
+
+      if (upgradedHash) {
+        user.passwordHash = upgradedHash
+        await store.write(storageKeys.users, users.map((entry) => (entry.id === user.id ? user : entry)))
       }
 
       const session: AuthSession = {
@@ -1855,6 +2061,50 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       await store.write(storageKeys.session, session)
 
       return { user, session }
+    },
+
+    async createStaffAccount(input) {
+      const fullName = input.fullName.trim()
+      const username = input.username.trim().toLowerCase()
+      const password = input.password.trim()
+      const roleId = input.roleId.trim()
+
+      if (!fullName || !username || !password || !roleId) {
+        throw new Error('Full name, username, password, and role are required.')
+      }
+
+      if (await isOnlineSyncEnabled() && firebaseSync) {
+        const session = await getFirebaseSession()
+        if (!session) {
+          throw new Error('Your admin session has expired — please sign in again.')
+        }
+
+        // No try/catch here: a remote failure must propagate so the admin sees a
+        // real error, rather than silently creating a local-only account the new
+        // employee could never actually log into from another device.
+        const user = await firebaseSync.createStaffAccount({ fullName, username, password, roleId })
+        const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+        await store.write(storageKeys.users, [user, ...existingUsers.filter((u) => u.id !== user.id)])
+        return user
+      }
+
+      const users = await store.read<UserAccount[]>(storageKeys.users, [])
+      if (users.some((user) => user.username === username)) {
+        throw new Error('That username is already in use.')
+      }
+
+      const user: UserAccount = {
+        id: crypto.randomUUID(),
+        fullName,
+        username,
+        passwordHash: await hashPassword(password),
+        roleId,
+        createdAt: new Date().toISOString(),
+      }
+
+      await store.write(storageKeys.users, [...users, user])
+      // Deliberately does not touch storageKeys.session — the admin stays signed in as themselves.
+      return user
     },
 
     async updateUserRole(userId, roleId) {

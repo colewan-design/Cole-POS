@@ -10,7 +10,13 @@
     "dev:web": "npm run dev --workspace web",
     "build:web": "npm run build --workspace web"
   },
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  },
   "devDependencies": {
-    "playwright": "^1.61.1"
+    "@types/node": "^24.12.3",
+    "@vercel/node": "^3.2.29",
+    "playwright": "^1.61.1",
+    "typescript": "~6.0.2"
   }
 }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowRight, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
+import { ArrowRight, Ban, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
+import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { printReceipt } from '@pos/core/utils/receipt'
 import {
@@ -17,6 +18,7 @@ import {
 } from '@pos/shared/index'
 
 const store = usePosStore()
+const auth = useAuthStore()
 
 onMounted(() => {
   if (!store.isReady) {
@@ -101,6 +103,11 @@ function orderTypeLabel(type: OrderSummary['orderType']) {
   return type === 'dine_in' ? 'Dine in' : 'Takeaway'
 }
 
+function userNameFor(userId: string | null | undefined): string | null {
+  if (!userId) return null
+  return auth.users.find((user) => user.id === userId)?.fullName ?? null
+}
+
 function formatFullDate(value: string) {
   return new Intl.DateTimeFormat('en-PH', {
     month: 'short',
@@ -116,6 +123,24 @@ function handlePrintReceipt(order: OrderSummary) {
     name: store.settings.businessName,
     imageUrl: store.settings.businessImageUrl,
   })
+}
+
+const isVoiding = ref(false)
+
+async function handleVoidOrder(order: OrderSummary) {
+  if (!auth.isOwner || order.voidedAt || isVoiding.value) return
+
+  const reason = window.prompt(
+    `Void ticket ${order.ticketNumber}? This restores inventory and removes it from revenue. This can't be undone.\n\nOptional reason:`,
+  )
+  if (reason === null) return
+
+  isVoiding.value = true
+  try {
+    await store.voidOrder(order.id, { userId: auth.currentUser?.id ?? null, reason: reason || null })
+  } finally {
+    isVoiding.value = false
+  }
 }
 
 const bounds = computed(() => getBounds(range.value))
@@ -168,13 +193,17 @@ watch(
   { immediate: true },
 )
 
-const grossSales = computed(() => filteredOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
-const taxCollected = computed(() => filteredOrders.value.reduce((sum, order) => sum + order.taxCents, 0))
+// Voided orders stay visible in the list/search below for record-keeping,
+// but drop out of every revenue rollup on this page.
+const activeOrders = computed(() => filteredOrders.value.filter((order) => !order.voidedAt))
+
+const grossSales = computed(() => activeOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
+const taxCollected = computed(() => activeOrders.value.reduce((sum, order) => sum + order.taxCents, 0))
 const averageTicket = computed(() =>
-  filteredOrders.value.length > 0 ? Math.round(grossSales.value / filteredOrders.value.length) : 0,
+  activeOrders.value.length > 0 ? Math.round(grossSales.value / activeOrders.value.length) : 0,
 )
 const itemCount = computed(() =>
-  filteredOrders.value.reduce(
+  activeOrders.value.reduce(
     (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
     0,
   ),
@@ -185,7 +214,7 @@ const paymentTotals = computed(() => {
   const methods: PaymentMethod[] = ['cash', 'card', 'ewallet']
 
   return methods.map((method) => {
-    const orders = filteredOrders.value.filter((order) => order.paymentMethod === method)
+    const orders = activeOrders.value.filter((order) => order.paymentMethod === method)
     const amount = orders.reduce((sum, order) => sum + order.totalCents, 0)
 
     return {
@@ -203,7 +232,7 @@ const modeTotals = computed(() => {
 
   return modes
     .map((mode) => {
-      const orders = filteredOrders.value.filter((order) => order.businessMode === mode)
+      const orders = activeOrders.value.filter((order) => order.businessMode === mode)
       return {
         mode,
         label: businessModeLabel(mode),
@@ -247,7 +276,7 @@ const rangeCaption = computed(() => {
 
     <section class="orders-kpis">
       <MetricCard label="Gross sales" :value="formatCurrency(grossSales)" />
-      <MetricCard label="Completed orders" :value="String(filteredOrders.length)" />
+      <MetricCard label="Completed orders" :value="String(activeOrders.length)" />
       <MetricCard label="Average ticket" :value="formatCurrency(averageTicket)" />
       <MetricCard label="Items sold" :value="String(itemCount)" />
     </section>
@@ -332,7 +361,7 @@ const rangeCaption = computed(() => {
             v-for="order in filteredOrders"
             :key="order.id"
             class="orders-row"
-            :class="{ 'orders-row--active': selectedOrder?.id === order.id }"
+            :class="{ 'orders-row--active': selectedOrder?.id === order.id, 'orders-row--voided': order.voidedAt }"
             type="button"
             @click="selectedOrderId = order.id"
           >
@@ -340,7 +369,7 @@ const rangeCaption = computed(() => {
               <ReceiptText :size="17" />
             </span>
             <span class="orders-row__body">
-              <strong>Ticket {{ order.ticketNumber }}</strong>
+              <strong>Ticket {{ order.ticketNumber }}<span v-if="order.voidedAt" class="orders-voided-tag">Voided</span></strong>
               <span>{{ order.customerName }} / {{ formatCompactDate(order.createdAt) }} / {{ paymentLabel(order.paymentMethod) }} / {{ orderTypeLabel(order.orderType) }}</span>
             </span>
             <span class="orders-row__amount">{{ formatCurrency(order.totalCents) }}</span>
@@ -357,22 +386,41 @@ const rangeCaption = computed(() => {
               <h2>Ticket {{ selectedOrder.ticketNumber }}</h2>
               <span>{{ formatFullDate(selectedOrder.createdAt) }}</span>
             </div>
-            <button
-              class="icon-button"
-              type="button"
-              :aria-label="`Print receipt for ticket ${selectedOrder.ticketNumber}`"
-              @click="handlePrintReceipt(selectedOrder)"
-            >
-              <Printer :size="18" />
-            </button>
+            <div class="orders-detail__actions">
+              <button
+                v-if="auth.isOwner && !selectedOrder.voidedAt"
+                class="icon-button"
+                type="button"
+                :disabled="isVoiding"
+                :aria-label="`Void ticket ${selectedOrder.ticketNumber}`"
+                @click="handleVoidOrder(selectedOrder)"
+              >
+                <Ban :size="18" />
+              </button>
+              <button
+                class="icon-button"
+                type="button"
+                :aria-label="`Print receipt for ticket ${selectedOrder.ticketNumber}`"
+                @click="handlePrintReceipt(selectedOrder)"
+              >
+                <Printer :size="18" />
+              </button>
+            </div>
           </div>
 
           <div class="orders-detail__chips">
+            <span v-if="selectedOrder.voidedAt" class="orders-detail__chip--voided">Voided</span>
             <span>{{ selectedOrder.customerName }}</span>
             <span>{{ businessModeLabel(selectedOrder.businessMode) }}</span>
             <span>{{ orderTypeLabel(selectedOrder.orderType) }}</span>
             <span>{{ paymentLabel(selectedOrder.paymentMethod) }}</span>
           </div>
+          <p v-if="selectedOrder.voidedAt" class="orders-detail__void-note">
+            Voided {{ formatFullDate(selectedOrder.voidedAt) }}<template v-if="userNameFor(selectedOrder.voidedByUserId)"> by {{ userNameFor(selectedOrder.voidedByUserId) }}</template><template v-if="selectedOrder.voidReason">: {{ selectedOrder.voidReason }}</template>
+          </p>
+          <p v-if="selectedOrder.paymentConfirmedAt" class="orders-detail__paid-note">
+            Payment confirmed {{ formatFullDate(selectedOrder.paymentConfirmedAt) }}<template v-if="userNameFor(selectedOrder.paymentConfirmedByUserId)"> by {{ userNameFor(selectedOrder.paymentConfirmedByUserId) }}</template>
+          </p>
 
           <div class="orders-lines">
             <div v-for="item in selectedOrder.items" :key="`${selectedOrder.id}-${item.productId}`" class="orders-line">
@@ -632,6 +680,24 @@ const rangeCaption = computed(() => {
   background: var(--fill);
 }
 
+.orders-row--voided {
+  opacity: 0.6;
+}
+
+.orders-voided-tag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  font: var(--type-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
 .orders-row__icon {
   width: 38px;
   height: 38px;
@@ -704,6 +770,29 @@ const rangeCaption = computed(() => {
   color: var(--text-secondary);
   font: var(--type-caption);
   font-weight: 600;
+}
+
+.orders-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.orders-detail__chips .orders-detail__chip--voided {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
+.orders-detail__void-note {
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--danger);
+  font: var(--type-caption);
+}
+
+.orders-detail__paid-note {
+  margin: calc(var(--space-2) * -1) 0 0;
+  color: var(--success);
+  font: var(--type-caption);
 }
 
 .orders-lines {

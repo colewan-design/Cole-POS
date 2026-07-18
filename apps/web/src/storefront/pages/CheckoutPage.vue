@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
+import { ShieldCheck, Truck } from '@lucide/vue'
 import { formatCurrency } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/storefront/cart'
 import { createOnlineOrder } from '@pos/web/storefront/firebase'
@@ -27,11 +28,12 @@ async function handleSubmit() {
     const result = await createOnlineOrder(
       cart.cartLines.value.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
       { name: name.value.trim(), phone: phone.value.trim() || undefined, email: email.value.trim() || undefined },
+      { method: 'pickup' },
     )
     cart.clear()
     await router.push({ name: 'order', params: { orderId: result.orderId } })
   } catch {
-    error.value = "Couldn't place your order — please check your details and try again."
+    error.value = "Couldn't place your order right now. Please check your details and try again."
   } finally {
     submitting.value = false
   }
@@ -40,186 +42,283 @@ async function handleSubmit() {
 
 <template>
   <div class="checkout">
-    <h1 class="checkout__title">Your order</h1>
+    <header class="checkout__header">
+      <p class="checkout__eyebrow">Cart</p>
+      <h1>Your order summary</h1>
+      <p>Review items, leave pickup contact details, and confirm your store order.</p>
+    </header>
 
     <p v-if="cart.cartLines.value.length === 0" class="checkout__empty">
-      Your cart is empty. <RouterLink to="/">Browse the menu</RouterLink> to add something.
+      Your cart is empty. <RouterLink to="/">Browse the store</RouterLink> to add products.
     </p>
 
-    <template v-else>
-      <ul class="checkout__lines">
-        <li v-for="line in cart.cartLines.value" :key="line.product.id" class="checkout__line">
-          <span class="checkout__line-name">{{ line.quantity }}&times; {{ line.product.name }}</span>
-          <span class="checkout__line-price">{{ formatCurrency(line.product.priceCents * line.quantity) }}</span>
-          <button type="button" class="checkout__line-remove" @click="cart.remove(line.product.id)">Remove</button>
-        </li>
-      </ul>
+    <div v-else class="checkout__layout">
+      <section class="checkout__lines">
+        <article v-for="line in cart.cartLines.value" :key="line.product.id" class="checkout__line">
+          <div>
+            <strong>{{ line.product.name }}</strong>
+            <p>{{ line.quantity }} x {{ formatCurrency(line.product.priceCents) }}</p>
+          </div>
+          <div class="checkout__line-side">
+            <span>{{ formatCurrency(line.product.priceCents * line.quantity) }}</span>
+            <button type="button" @click="cart.remove(line.product.id)">Remove</button>
+          </div>
+        </article>
 
-      <div class="checkout__totals">
-        <div class="checkout__totals-row">
+        <div class="checkout__summary-row">
           <span>Subtotal</span>
-          <span>{{ formatCurrency(cart.subtotalCents.value) }}</span>
+          <strong>{{ formatCurrency(cart.subtotalCents.value) }}</strong>
         </div>
-        <div class="checkout__totals-row">
+        <div class="checkout__summary-row">
           <span>Tax</span>
-          <span>{{ formatCurrency(cart.taxCents.value) }}</span>
+          <strong>{{ formatCurrency(cart.taxCents.value) }}</strong>
         </div>
-        <div class="checkout__totals-row checkout__totals-row--total">
+        <div class="checkout__summary-row checkout__summary-row--total">
           <span>Total</span>
-          <span>{{ formatCurrency(cart.totalCents.value) }}</span>
+          <strong>{{ formatCurrency(cart.totalCents.value) }}</strong>
         </div>
-        <p class="checkout__note">Pay when you pick up in store — no payment is collected online.</p>
-      </div>
+
+        <div class="checkout__benefits">
+          <div class="checkout__benefit">
+            <ShieldCheck :size="17" />
+            <span>Order goes directly to the store.</span>
+          </div>
+          <div class="checkout__benefit">
+            <Truck :size="17" />
+            <span>Pickup flow only — you pay when claiming the order.</span>
+          </div>
+        </div>
+      </section>
 
       <form class="checkout__form" @submit.prevent="handleSubmit">
+        <h2>Pickup details</h2>
+
         <label class="checkout__field">
-          <span>Name</span>
-          <input v-model="name" type="text" required placeholder="Your name" />
+          <span>Full name</span>
+          <input v-model="name" type="text" required placeholder="Juan Dela Cruz" />
         </label>
         <label class="checkout__field">
           <span>Phone</span>
-          <input v-model="phone" type="tel" placeholder="Phone number" />
+          <input v-model="phone" type="tel" placeholder="09xx xxx xxxx" />
         </label>
         <label class="checkout__field">
           <span>Email</span>
-          <input v-model="email" type="email" placeholder="Email address" />
+          <input v-model="email" type="email" placeholder="you@example.com" />
         </label>
-        <p class="checkout__hint">We just need a phone or an email so the store can reach you.</p>
 
+        <p class="checkout__hint">Enter a phone or email so the store can contact you about pickup.</p>
         <p v-if="error" class="checkout__error">{{ error }}</p>
 
         <button class="checkout__submit" type="submit" :disabled="!canSubmit || submitting">
           {{ submitting ? 'Placing order…' : `Place order — ${formatCurrency(cart.totalCents.value)}` }}
         </button>
       </form>
-    </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.checkout__title {
-  margin: 0 0 24px;
-  font-size: clamp(1.6rem, 3vw, 2.2rem);
+.checkout {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.checkout__header {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.checkout__eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12.5px;
   font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.checkout__header h1 {
+  margin: 0;
+  font-size: 1.75rem;
   letter-spacing: -0.02em;
 }
 
-.checkout__empty {
-  color: #5b5f66;
+.checkout__header p:last-child {
+  margin: 0;
+  color: var(--text-secondary);
 }
 
-.checkout__lines {
-  list-style: none;
-  margin: 0 0 24px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.checkout__empty {
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  color: var(--text-secondary);
+}
+
+.checkout__empty a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.checkout__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: start;
+  gap: var(--space-6);
+}
+
+.checkout__lines,
+.checkout__form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+}
+
+.checkout__form h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 1.05rem;
 }
 
 .checkout__line {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  background: #fff;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--separator);
 }
 
-.checkout__line-name {
-  flex: 1;
-  font-weight: 600;
+.checkout__line strong,
+.checkout__line p,
+.checkout__line-side span,
+.checkout__line-side button {
+  display: block;
 }
 
-.checkout__line-remove {
+.checkout__line p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.checkout__line-side {
+  text-align: right;
+}
+
+.checkout__line-side span {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.checkout__line-side button {
+  margin-top: 6px;
   border: none;
-  background: none;
-  color: #b42318;
-  font-size: 13px;
+  background: transparent;
+  color: var(--accent);
+  font: 700 12.5px/1 inherit;
   cursor: pointer;
 }
 
-.checkout__totals {
-  padding: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  background: #fff;
-  margin-bottom: 24px;
-}
-
-.checkout__totals-row {
+.checkout__summary-row {
   display: flex;
   justify-content: space-between;
-  padding: 4px 0;
-  color: #5b5f66;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
-.checkout__totals-row--total {
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  color: #16181c;
+.checkout__summary-row strong {
+  color: var(--text-primary);
+}
+
+.checkout__summary-row--total {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--separator);
+  color: var(--text-primary);
+  font-size: 15.5px;
   font-weight: 800;
-  font-size: 1.1rem;
 }
 
-.checkout__note {
-  margin: 12px 0 0;
+.checkout__summary-row--total strong {
+  color: var(--accent);
+  font-size: 1.2rem;
+}
+
+.checkout__benefits {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.checkout__benefit {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  color: var(--text-secondary);
   font-size: 13px;
-  color: #5b5f66;
-}
-
-.checkout__form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 420px;
 }
 
 .checkout__field {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 6px;
+  color: var(--text-secondary);
   font-size: 13px;
-  font-weight: 600;
-  color: #5b5f66;
+  font-weight: 700;
 }
 
 .checkout__field input {
-  padding: 12px 14px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 10px;
-  font-size: 15px;
-  font-family: inherit;
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: 600 14px/1 inherit;
+}
+
+.checkout__field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .checkout__hint {
-  margin: 0;
+  margin: -2px 0 0;
+  color: var(--text-tertiary);
   font-size: 12.5px;
-  color: #8a8f98;
+  line-height: 1.4;
 }
 
 .checkout__error {
   margin: 0;
-  color: #b42318;
-  font-size: 14px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .checkout__submit {
-  margin-top: 8px;
-  padding: 14px;
+  min-height: 46px;
   border: none;
-  border-radius: 10px;
-  background: #ea5b1c;
-  color: #fff;
-  font-weight: 800;
-  font-size: 15px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-text-on);
+  font: 800 14.5px/1 inherit;
   cursor: pointer;
 }
 
 .checkout__submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 860px) {
+  .checkout__layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -12,6 +12,7 @@ import {
   type CreateCategoryInput,
   type CreateCustomerInput,
   type CreateProductInput,
+  type CreateSupplierInput,
   type CreateTableInput,
   type Customer,
   type OrderStatus,
@@ -19,8 +20,10 @@ import {
   type OrderType,
   type PaymentMethod,
   type Product,
+  type ReorderMark,
   type RestaurantTable,
   type ShiftSummary,
+  type Supplier,
 } from '@pos/shared/index'
 
 export const usePosStore = defineStore('pos', () => {
@@ -30,6 +33,8 @@ export const usePosStore = defineStore('pos', () => {
   const categories = ref<{ id: string; name: string }[]>([])
   const customers = ref<Customer[]>([])
   const tables = ref<RestaurantTable[]>([])
+  const suppliers = ref<Supplier[]>([])
+  const reorderMarks = ref<ReorderMark[]>([])
   const orders = ref<OrderSummary[]>([])
   // Orders placed through the public storefront, written directly to Firestore
   // by the createOnlineOrder Cloud Function — kept separate from `orders`
@@ -168,7 +173,10 @@ export const usePosStore = defineStore('pos', () => {
       resetTransientState()
     }
 
-    const [catalog, savedCustomers, savedTables, savedOrders, savedSettings, savedEvents, savedShift, savedOnlineOrders] = await Promise.all([
+    const [
+      catalog, savedCustomers, savedTables, savedOrders, savedSettings, savedEvents, savedShift, savedOnlineOrders,
+      savedSuppliers, savedReorderMarks,
+    ] = await Promise.all([
       repository.loadCatalog(),
       repository.loadCustomers(),
       repository.loadTables(),
@@ -177,6 +185,8 @@ export const usePosStore = defineStore('pos', () => {
       repository.loadAppEvents(),
       repository.loadActiveShift(),
       repository.loadOnlineOrders(),
+      repository.loadSuppliers(),
+      repository.loadReorderMarks(),
     ])
 
     products.value = catalog.products
@@ -188,6 +198,8 @@ export const usePosStore = defineStore('pos', () => {
     appEvents.value = savedEvents
     activeShift.value = savedShift
     onlineOrders.value = savedOnlineOrders
+    suppliers.value = savedSuppliers
+    reorderMarks.value = savedReorderMarks
     isReady.value = true
   }
 
@@ -428,6 +440,49 @@ export const usePosStore = defineStore('pos', () => {
     tables.value = tables.value.filter((table) => table.id !== id)
   }
 
+  async function createSupplier(input: CreateSupplierInput) {
+    const supplier = await repository.saveSupplier(input)
+    suppliers.value = [...suppliers.value, supplier]
+    return supplier
+  }
+
+  async function editSupplier(supplier: Supplier) {
+    const nextSupplier = await repository.updateSupplier(supplier)
+    const index = suppliers.value.findIndex((entry) => entry.id === nextSupplier.id)
+    if (index !== -1) {
+      suppliers.value[index] = nextSupplier
+    }
+    return nextSupplier
+  }
+
+  async function removeSupplier(id: string) {
+    await repository.deleteSupplier(id)
+    suppliers.value = suppliers.value.filter((supplier) => supplier.id !== id)
+  }
+
+  async function markReorder(input: { productId: string; supplierId: string | null; quantity: number; userId?: string | null }) {
+    const mark = await repository.markReorder(input)
+    reorderMarks.value = [mark, ...reorderMarks.value.filter((entry) => entry.productId !== input.productId)]
+    return mark
+  }
+
+  async function cancelReorderMark(markId: string) {
+    await repository.clearReorderMark(markId)
+    reorderMarks.value = reorderMarks.value.filter((entry) => entry.id !== markId)
+  }
+
+  // Restocks the product for real and clears its "on order" mark in one step
+  // — the mark only exists to stop a shortage being reordered twice while
+  // it's in transit, so it's stale the moment stock actually arrives.
+  async function receiveReorder(markId: string, quantity?: number) {
+    const mark = reorderMarks.value.find((entry) => entry.id === markId)
+    if (!mark) return
+
+    await restockProduct(mark.productId, quantity ?? mark.quantity)
+    await repository.clearReorderMark(markId)
+    reorderMarks.value = reorderMarks.value.filter((entry) => entry.id !== markId)
+  }
+
   async function editProduct(product: Product) {
     await repository.updateProduct(product)
     const index = products.value.findIndex((p) => p.id === product.id)
@@ -560,12 +615,59 @@ export const usePosStore = defineStore('pos', () => {
     return updated
   }
 
+  // Full-order void only — reverses the whole sale (inventory restored,
+  // excluded from revenue). No partial/line-item refund. Callers are
+  // responsible for permission-gating this (owner/admin only in the UI).
+  async function voidOrder(orderId: string, options: { userId?: string | null; reason?: string | null } = {}) {
+    const order = orders.value.find((entry) => entry.id === orderId)
+    if (!order || order.voidedAt) {
+      return order ?? null
+    }
+
+    const voided = await repository.voidOrder(orderId, options)
+    const index = orders.value.findIndex((entry) => entry.id === orderId)
+    if (index !== -1) {
+      orders.value[index] = voided
+    }
+
+    if (activeShift.value) {
+      await refreshActiveShift()
+    }
+
+    for (const item of order.items) {
+      const product = products.value.find((p) => p.id === item.productId)
+      if (!product || product.stockQty === undefined) continue
+
+      const updated = await repository.adjustInventory({
+        productId: item.productId,
+        quantityDelta: item.quantity,
+        adjustmentType: 'manual_correction',
+        orderId: order.id,
+        reason: `void:${order.ticketNumber}`,
+      })
+      if (!updated) continue
+
+      const productIndex = products.value.findIndex((p) => p.id === item.productId)
+      if (productIndex !== -1) {
+        products.value[productIndex] = updated
+      }
+    }
+
+    await trackEvent('order_voided', {
+      orderId: voided.id,
+      totalCents: voided.totalCents,
+      reason: voided.voidReason ?? null,
+    })
+
+    return voided
+  }
+
   // Settles payment on an online order a customer already placed through the
   // storefront — distinct from completeOrder(), which creates a brand-new
   // (already-paid) order from the live cart.
   async function settleOnlineOrderPayment(
     orderId: string,
-    payment: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+    payment: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
   ) {
     const updated = await repository.settleOrderPayment(orderId, payment)
     const index = onlineOrders.value.findIndex((order) => order.id === orderId)
@@ -635,6 +737,8 @@ export const usePosStore = defineStore('pos', () => {
     categories,
     customers,
     tables,
+    suppliers,
+    reorderMarks,
     orders,
     onlineOrders,
     appEvents,
@@ -689,6 +793,7 @@ export const usePosStore = defineStore('pos', () => {
     updateSettings,
     completeOrder,
     updateOrderStatus,
+    voidOrder,
     refreshOnlineOrders,
     settleOnlineOrderPayment,
     clearLowStockAlert,
@@ -707,6 +812,12 @@ export const usePosStore = defineStore('pos', () => {
     createTable,
     editTable,
     removeTable,
+    createSupplier,
+    editSupplier,
+    removeSupplier,
+    markReorder,
+    cancelReorderMark,
+    receiveReorder,
     createCategory,
     editCategory,
     removeCategory,

@@ -10,12 +10,19 @@ import {
   Users,
 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
+import AddEmployeeSheet from '@pos/core/components/AddEmployeeSheet.vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { appPageKeys, appPageLabel, type AppPageKey } from '@pos/shared/index'
 
 const auth = useAuthStore()
+const showAddEmployee = ref(false)
+
+function openAddEmployee() {
+  auth.clearAuthError()
+  showAddEmployee.value = true
+}
 
 onMounted(() => {
   if (!auth.isReady) {
@@ -30,7 +37,15 @@ const newRoleName = ref('')
 
 const activeRole = computed(() => auth.roles.find((role) => role.id === activeRoleId.value) ?? null)
 const roleOptions = computed(() => auth.roles.map((role) => ({ value: role.id, label: role.name })))
+const assignableRoleOptions = computed(() =>
+  auth.roles
+    .filter((role) => role.id !== 'guest')
+    .map((role) => ({ value: role.id, label: role.name })),
+)
 const roleFilterOptions = computed(() => [{ value: 'all', label: 'All roles' }, ...roleOptions.value])
+const isLockedSystemRole = computed(() =>
+  activeRole.value?.id === 'admin' || activeRole.value?.id === 'guest',
+)
 
 const filteredUsers = computed(() => {
   const needle = searchQuery.value.trim().toLowerCase()
@@ -101,13 +116,18 @@ function assignUserRole(userId: string, roleId: string) {
 }
 
 function renameActiveRole(name: string) {
-  if (!activeRole.value || activeRole.value.id === 'admin') return
+  if (!activeRole.value || isLockedSystemRole.value) return
   void auth.renameRole(activeRole.value.id, name)
 }
 
 function updateRolePermission(page: AppPageKey, allowed: boolean) {
-  if (!activeRole.value) return
+  if (!activeRole.value || isLockedSystemRole.value) return
   void auth.setRolePermission(activeRole.value.id, page, allowed)
+}
+
+function updateRoleManageStaff(allowed: boolean) {
+  if (!activeRole.value || isLockedSystemRole.value) return
+  void auth.setRoleManageStaff(activeRole.value.id, allowed)
 }
 
 function addRole() {
@@ -174,9 +194,20 @@ function removeActiveRole() {
 
       <!-- Team directory -->
       <article class="emp-card surface-panel">
-        <div class="emp-card__head">
-          <p class="emp-eyebrow">Team directory</p>
-          <h2 class="emp-card__title">Accounts on this register</h2>
+        <div class="emp-card__head emp-card__head--row">
+          <div>
+            <p class="emp-eyebrow">Team directory</p>
+            <h2 class="emp-card__title">Accounts on this register</h2>
+          </div>
+          <button
+            v-if="auth.canManageAccess"
+            class="segment-button emp-add-button"
+            type="button"
+            @click="openAddEmployee"
+          >
+            <Plus :size="15" />
+            <span>Add employee</span>
+          </button>
         </div>
 
         <div class="emp-toolbar">
@@ -215,7 +246,7 @@ function removeActiveRole() {
               :model-value="user.roleId"
               label="Assign role"
               :disabled="!auth.canManageAccess"
-              :options="roleOptions"
+              :options="assignableRoleOptions"
               @update:model-value="assignUserRole(user.id, $event)"
             />
           </div>
@@ -265,11 +296,30 @@ function removeActiveRole() {
               :value="activeRole.name"
               class="sheet-input"
               type="text"
-              :disabled="!auth.canManageAccess || activeRole.id === 'admin'"
+              :disabled="!auth.canManageAccess || isLockedSystemRole"
               @blur="renameActiveRole(($event.target as HTMLInputElement).value)"
               @keydown.enter.prevent="renameActiveRole(($event.target as HTMLInputElement).value)"
             />
           </label>
+
+          <p v-if="isLockedSystemRole" class="emp-helper">
+            Built-in system roles are locked so owner access and guest access cannot be weakened by mistake.
+          </p>
+
+          <div v-if="auth.isOwner" class="emp-permissions emp-permissions--staff">
+            <div class="emp-perm-row">
+              <span class="emp-perm-row__label">
+                Can manage staff
+                <span class="emp-perm-row__hint">Add employees, assign roles, edit non-locked roles</span>
+              </span>
+              <ToggleSwitch
+                :model-value="!!activeRole.canManageStaff"
+                :ariaLabel="`Let ${activeRole.name} manage staff`"
+                :disabled="isLockedSystemRole"
+                @update:model-value="updateRoleManageStaff"
+              />
+            </div>
+          </div>
 
           <div class="emp-permissions">
             <div v-for="page in appPageKeys" :key="page" class="emp-perm-row">
@@ -277,7 +327,7 @@ function removeActiveRole() {
               <ToggleSwitch
                 :model-value="activeRole.permissions[page]"
                 :ariaLabel="`Allow ${activeRole.name} to access ${appPageLabel(page)}`"
-                :disabled="!auth.canManageAccess"
+                :disabled="!auth.canManageAccess || isLockedSystemRole"
                 @update:model-value="(value) => updateRolePermission(page, value)"
               />
             </div>
@@ -298,6 +348,13 @@ function removeActiveRole() {
         <p v-if="auth.authError" class="emp-error">{{ auth.authError }}</p>
       </article>
     </section>
+
+    <AddEmployeeSheet
+      v-if="showAddEmployee"
+      :role-options="assignableRoleOptions"
+      @close="showAddEmployee = false"
+      @saved="showAddEmployee = false"
+    />
   </div>
 </template>
 
@@ -425,6 +482,21 @@ function removeActiveRole() {
 .emp-card__title {
   margin: 0;
   font: var(--type-headline);
+}
+
+.emp-card__head--row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.emp-add-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
 }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
@@ -595,6 +667,12 @@ function removeActiveRole() {
   letter-spacing: 0.04em;
 }
 
+.emp-helper {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
 /* ── Permissions list ────────────────────────────────────────────────────── */
 
 .emp-permissions {
@@ -618,8 +696,20 @@ function removeActiveRole() {
 }
 
 .emp-perm-row__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font: var(--type-subhead);
   color: var(--text-primary);
+}
+
+.emp-perm-row__hint {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.emp-permissions--staff {
+  border-color: var(--accent);
 }
 
 .emp-role-detail__delete {

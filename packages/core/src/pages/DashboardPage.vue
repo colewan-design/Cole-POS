@@ -17,7 +17,7 @@ onMounted(() => {
 const range = ref<Range>('month')
 const now = new Date()
 
-type Channel = 'In-Store' | 'Online' | 'Mobile App' | 'Walk-in'
+type Channel = 'Dine-in' | 'Takeaway' | 'Online Pickup' | 'Online Delivery'
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
@@ -29,25 +29,22 @@ function getMonday(d: Date) {
   return new Date(startOfDay(d).getTime() + diff * 86400000)
 }
 
-function hashValue(seed: string) {
-  let hash = 0
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
-  }
-  return hash
-}
-
 function customerNameFor(order: OrderSummary) {
   return order.customerName || guestCustomerName
 }
 
+// A missing `channel` means an older/local in-person order (see the field's
+// doc comment in shared/index.ts) — online orders always set it explicitly.
 function channelFor(order: OrderSummary): Channel {
-  const channels: Channel[] = ['In-Store', 'Online', 'Mobile App', 'Walk-in']
-  return channels[hashValue(`${order.id}:${order.paymentMethod}:${order.orderType}`) % channels.length]
+  if ((order.channel ?? 'in_person') === 'online') {
+    return order.fulfillmentMethod === 'delivery' ? 'Online Delivery' : 'Online Pickup'
+  }
+  return order.orderType === 'dine_in' ? 'Dine-in' : 'Takeaway'
 }
 
-function orderStatusFor(order: OrderSummary) {
-  return hashValue(`${order.id}:status`) % 4 === 0 ? 'Processing' : 'Completed'
+// A missing `paymentStatus` means 'paid' (same fallback as shared/index.ts).
+function paymentStatusFor(order: OrderSummary) {
+  return (order.paymentStatus ?? 'paid') === 'paid' ? 'Completed' : 'Processing'
 }
 
 interface Bounds {
@@ -90,11 +87,12 @@ function inBounds(order: OrderSummary, start: Date, end: Date) {
 }
 
 const bounds = computed(() => getBounds(range.value))
-const periodOrders = computed(() => store.orders.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)))
+const activeOrders = computed(() => store.orders.filter((order) => !order.voidedAt))
+const periodOrders = computed(() => activeOrders.value.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)))
 const priorOrders = computed(() =>
   range.value === 'all'
     ? []
-    : store.orders.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
+    : activeOrders.value.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
 )
 
 function delta(current: number, previous: number) {
@@ -249,10 +247,10 @@ const salesLabelStep = computed(() => Math.max(1, Math.ceil(salesSeries.value.le
 
 const channelBreakdown = computed(() => {
   const totals = new Map<Channel, number>([
-    ['In-Store', 0],
-    ['Online', 0],
-    ['Mobile App', 0],
-    ['Walk-in', 0],
+    ['Dine-in', 0],
+    ['Takeaway', 0],
+    ['Online Pickup', 0],
+    ['Online Delivery', 0],
   ])
 
   for (const order of periodOrders.value) {
@@ -262,10 +260,10 @@ const channelBreakdown = computed(() => {
 
   const total = Array.from(totals.values()).reduce((sum, value) => sum + value, 0)
   const colors: Record<Channel, string> = {
-    'Walk-in': 'var(--accent)',
-    'In-Store': 'var(--success)',
-    'Online': 'var(--warning)',
-    'Mobile App': 'var(--danger)',
+    'Dine-in': 'var(--success)',
+    'Takeaway': 'var(--accent)',
+    'Online Pickup': 'var(--warning)',
+    'Online Delivery': 'var(--danger)',
   }
 
   return Array.from(totals.entries())
@@ -308,7 +306,7 @@ const recentOrders = computed(() =>
       id: `#${order.ticketNumber}`,
       customerName: customerNameFor(order),
       amount: order.totalCents,
-      status: orderStatusFor(order),
+      status: paymentStatusFor(order),
     })),
 )
 </script>

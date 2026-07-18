@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.colepos.app',
-  appName: 'Cole POS',
+  appId: 'com.colepos.storefront',
+  appName: 'Cole Store',
   webDir: 'www',
 }
 

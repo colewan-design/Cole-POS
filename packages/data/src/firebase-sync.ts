@@ -191,7 +191,14 @@ interface FsOrder {
   customerId?: string | null
   customerName?: string
   guestContact?: { name: string; phone?: string; email?: string } | null
+  fulfillmentMethod?: string
+  deliveryAddress?: string | null
   createdAt: Timestamp | null
+  voidedAt?: Timestamp | null
+  voidedByUserId?: string | null
+  voidReason?: string | null
+  paymentConfirmedAt?: Timestamp | null
+  paymentConfirmedByUserId?: string | null
 }
 
 interface FsOrderItem {
@@ -241,6 +248,13 @@ function mapFsOrder(
     channel: (data.channel ?? 'in_person') as OrderChannel,
     paymentStatus: (data.paymentStatus ?? 'paid') as PaymentStatus,
     guestContact: data.guestContact ?? null,
+    fulfillmentMethod: data.fulfillmentMethod as OrderSummary['fulfillmentMethod'],
+    deliveryAddress: data.deliveryAddress ?? null,
+    voidedAt: data.voidedAt ? toIso(data.voidedAt) : null,
+    voidedByUserId: data.voidedByUserId ?? null,
+    voidReason: data.voidReason ?? null,
+    paymentConfirmedAt: data.paymentConfirmedAt ? toIso(data.paymentConfirmedAt) : null,
+    paymentConfirmedByUserId: data.paymentConfirmedByUserId ?? null,
   }
 }
 
@@ -679,6 +693,47 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       return { user, session: authSession, syncSession }
     },
 
+    async createStaffAccount(input: {
+      fullName: string
+      username: string
+      password: string
+      roleId: string
+    }): Promise<UserAccount> {
+      const currentUser = await waitForAuthReady()
+      const idToken = await currentUser?.getIdToken()
+      if (!idToken) {
+        throw new Error('Your admin session has expired — please sign in again.')
+      }
+
+      const response = await fetch('/api/staff-create', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(input),
+      })
+
+      const body = await response.json().catch(() => ({})) as {
+        user?: { id: string; fullName: string; username: string; roleId: string; createdAt: string }
+        error?: string
+      }
+
+      if (!response.ok || !body.user) {
+        throw new Error(body.error || 'Unable to create that account.')
+      }
+
+      return {
+        id: body.user.id,
+        fullName: body.user.fullName,
+        username: body.user.username,
+        passwordHash: '',
+        roleId: body.user.roleId,
+        createdAt: body.user.createdAt,
+      }
+    },
+
     async signOut(): Promise<void> {
       await firebaseSignOut(auth)
     },
@@ -869,7 +924,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
     async settleOrderPayment(
       storeId: string,
       orderId: string,
-      input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number },
+      input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
     ): Promise<OrderSummary> {
       const orderRef = doc(db, 'organizations', config.organizationSlug, 'stores', storeId, 'orders', orderId)
       await updateDoc(orderRef, {
@@ -877,6 +932,10 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
         paymentMethod: input.paymentMethod,
         tenderedCents: input.tenderedCents,
         changeCents: input.changeCents,
+        // No payment gateway exists — this is a manual confirmation by staff,
+        // so keep an audit trail of who marked it paid and when.
+        paymentConfirmedAt: serverTimestamp(),
+        paymentConfirmedByUserId: input.userId ?? null,
       })
 
       const [orderSnap, itemsSnap] = await Promise.all([getDoc(orderRef), getDocs(collection(orderRef, 'items'))])

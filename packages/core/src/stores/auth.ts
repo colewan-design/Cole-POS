@@ -13,6 +13,7 @@ import {
 const guestUserId = '__guest__'
 const guestUsername = 'guest'
 const guestDisplayName = 'Guest Demo'
+const lockedRoleIds = new Set(['admin', 'guest'])
 
 function clonePermissions(role: RoleDefinition): RoleDefinition {
   return {
@@ -21,10 +22,26 @@ function clonePermissions(role: RoleDefinition): RoleDefinition {
   }
 }
 
+function withAllPermissionKeys(role: RoleDefinition): RoleDefinition {
+  return {
+    ...role,
+    permissions: Object.fromEntries(
+      appPageKeys.map((page) => [page, Boolean(role.permissions[page])]),
+    ) as Record<AppPageKey, boolean>,
+  }
+}
+
 function mergeRoles(savedRoles: RoleDefinition[]) {
-  const roleMap = new Map(savedRoles.map((role) => [role.id, clonePermissions(role)]))
+  const roleMap = new Map(
+    savedRoles.map((role) => [role.id, withAllPermissionKeys(clonePermissions(role))]),
+  )
 
   for (const role of defaultRoles) {
+    if (lockedRoleIds.has(role.id)) {
+      roleMap.set(role.id, clonePermissions(role))
+      continue
+    }
+
     if (!roleMap.has(role.id)) {
       roleMap.set(role.id, clonePermissions(role))
     }
@@ -71,7 +88,17 @@ export const useAuthStore = defineStore('auth', () => {
   )
 
   const hasUsers = computed(() => users.value.length > 0)
-  const canManageAccess = computed(() => currentRole.value?.id === 'admin')
+  // True owner — this stays admin-only and can't be delegated. Gates
+  // Integrations/Diagnostics and any action that touches the admin role.
+  const isOwner = computed(() => currentRole.value?.id === 'admin')
+  // Staff management (add employees, assign roles, edit non-locked roles) —
+  // delegable per-role via canManageStaff, so a Manager can hold it without
+  // being an owner.
+  const canManageAccess = computed(() => isOwner.value || currentRole.value?.canManageStaff === true)
+  const guestRole = computed(() => roles.value.find((role) => role.id === 'guest') ?? null)
+  const canUseGuestAccess = computed(() =>
+    appPageKeys.some((page) => Boolean(guestRole.value?.permissions[page])),
+  )
 
   const accessiblePages = computed(() =>
     appPageKeys.filter((page) => currentRole.value?.permissions[page]),
@@ -100,7 +127,18 @@ export const useAuthStore = defineStore('auth', () => {
     roles.value = mergeRoles(savedRoles.length > 0 ? savedRoles : defaultRoles)
     session.value = savedSession
 
+    const persistedRoles = JSON.stringify(savedRoles)
+    const normalizedRoles = JSON.stringify(roles.value)
+    if (savedRoles.length > 0 && persistedRoles !== normalizedRoles) {
+      await repository.saveRoles(roles.value)
+    }
+
     if (savedSession && savedSession.userId !== guestUserId && !savedUsers.some((user) => user.id === savedSession.userId)) {
+      session.value = null
+      await repository.saveSession(null)
+    }
+
+    if (session.value?.userId === guestUserId && !canUseGuestAccess.value) {
       session.value = null
       await repository.saveSession(null)
     }
@@ -165,8 +203,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function loginAsGuest() {
     clearAuthError()
 
-    if (!roles.value.some((role) => role.id === 'guest')) {
-      authError.value = 'Guest access is not configured.'
+    if (!roles.value.some((role) => role.id === 'guest') || !canUseGuestAccess.value) {
+      authError.value = 'Guest access is disabled for this app.'
       return false
     }
 
@@ -183,13 +221,74 @@ export const useAuthStore = defineStore('auth', () => {
     await repository.saveSession(null)
   }
 
+  async function createStaffAccount(input: {
+    fullName: string
+    username: string
+    password: string
+    roleId: string
+  }) {
+    if (!canManageAccess.value) {
+      return false
+    }
+
+    clearAuthError()
+
+    const fullName = input.fullName.trim()
+    const username = input.username.trim().toLowerCase()
+    const password = input.password.trim()
+    const roleId = input.roleId.trim()
+
+    if (!fullName || !username || !password || !roleId) {
+      authError.value = 'Complete all fields to add an employee.'
+      return false
+    }
+
+    if (users.value.some((user) => user.username === username)) {
+      authError.value = 'That username is already in use.'
+      return false
+    }
+
+    try {
+      await repository.createStaffAccount({ fullName, username, password, roleId })
+    } catch (err) {
+      authError.value = err instanceof Error ? err.message : 'Unable to create that account.'
+      return false
+    }
+
+    users.value = await repository.loadUsers()
+    return true
+  }
+
   async function updateUserRole(userId: string, roleId: string) {
     if (!canManageAccess.value) {
       return
     }
 
+    // A delegated (non-owner) manager can reassign any non-admin role, but
+    // granting/revoking the admin role itself is owner-only — otherwise a
+    // delegated manager could promote themselves (or anyone) to full owner.
+    const target = users.value.find((user) => user.id === userId)
+    const touchesAdminRole = roleId === 'admin' || target?.roleId === 'admin'
+    if (touchesAdminRole && !isOwner.value) {
+      return
+    }
+
     await repository.updateUserRole(userId, roleId)
     users.value = await repository.loadUsers()
+  }
+
+  // Whether a role can itself manage staff is owner-only to grant — a
+  // delegated manager can manage staff, but can't hand that same power to
+  // someone else (only the real owner decides who else becomes a manager).
+  async function setRoleManageStaff(roleId: string, allowed: boolean) {
+    if (!isOwner.value || lockedRoleIds.has(roleId)) {
+      return
+    }
+
+    roles.value = roles.value.map((role) =>
+      role.id === roleId ? { ...role, canManageStaff: allowed } : role,
+    )
+    await repository.saveRoles(roles.value)
   }
 
   async function createRole(name: string) {
@@ -223,7 +322,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function renameRole(roleId: string, name: string) {
-    if (!canManageAccess.value) {
+    if (!canManageAccess.value || lockedRoleIds.has(roleId)) {
       return
     }
 
@@ -239,7 +338,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function setRolePermission(roleId: string, page: AppPageKey, allowed: boolean) {
-    if (!canManageAccess.value) {
+    if (!canManageAccess.value || lockedRoleIds.has(roleId)) {
       return
     }
 
@@ -281,7 +380,9 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     currentRole,
     hasUsers,
+    isOwner,
     canManageAccess,
+    canUseGuestAccess,
     accessiblePages,
     firstAccessiblePage,
     initialize,
@@ -291,10 +392,12 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     loginAsGuest,
     logout,
+    createStaffAccount,
     updateUserRole,
     createRole,
     renameRole,
     setRolePermission,
+    setRoleManageStaff,
     deleteRole,
   }
 })

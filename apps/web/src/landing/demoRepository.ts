@@ -23,9 +23,11 @@ import {
   type OrderSummary,
   type PaymentMethod,
   type Product,
+  type ReorderMark,
   type RestaurantTable,
   type RoleDefinition,
   type ShiftSummary,
+  type Supplier,
   type UserAccount,
 } from '@pos/shared/index'
 import type { PosRepository } from '@pos/data/index'
@@ -161,6 +163,8 @@ export function createDemoPosRepository(): PosRepository {
   let categories: Category[] = [...demoCategories]
   let customers: Customer[] = seedDemoCustomers()
   let tables: RestaurantTable[] = []
+  let suppliers: Supplier[] = []
+  let reorderMarks: ReorderMark[] = []
   let orders: OrderSummary[] = seedDemoOrders(customers)
   let settings: AppSettings = { ...defaultSettings, businessName: 'Cole POS Demo' }
   let appEvents: AppEvent[] = []
@@ -244,17 +248,58 @@ export function createDemoPosRepository(): PosRepository {
       return updated
     },
 
+    async voidOrder(orderId: string, input: { userId?: string | null; reason?: string | null }) {
+      const index = orders.findIndex((order) => order.id === orderId)
+      if (index === -1) {
+        throw new Error(`Order ${orderId} not found.`)
+      }
+      if (orders[index].voidedAt) {
+        return orders[index]
+      }
+
+      const updated: OrderSummary = {
+        ...orders[index],
+        voidedAt: new Date().toISOString(),
+        voidedByUserId: input.userId ?? null,
+        voidReason: input.reason?.trim() || null,
+      }
+      orders = orders.map((order, i) => (i === index ? updated : order))
+
+      if (activeShift && !activeShift.closedAt) {
+        const isCash = updated.paymentMethod === 'cash'
+        activeShift = {
+          ...activeShift,
+          cashSalesCents: activeShift.cashSalesCents - (isCash ? updated.totalCents : 0),
+          expectedCashCents: activeShift.expectedCashCents - (isCash ? updated.totalCents : 0),
+          totalSalesCents: activeShift.totalSalesCents - updated.totalCents,
+          orderCount: Math.max(0, activeShift.orderCount - 1),
+        }
+      }
+
+      return updated
+    },
+
     async loadOnlineOrders() {
       return []
     },
 
-    async settleOrderPayment(orderId: string, input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number }) {
+    async settleOrderPayment(
+      orderId: string,
+      input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
+    ) {
       const index = orders.findIndex((order) => order.id === orderId)
       if (index === -1) {
         throw new Error(`Order ${orderId} not found.`)
       }
 
-      const updated = { ...orders[index], paymentStatus: 'paid' as const, ...input }
+      const { userId, ...payment } = input
+      const updated: OrderSummary = {
+        ...orders[index],
+        paymentStatus: 'paid',
+        ...payment,
+        paymentConfirmedAt: new Date().toISOString(),
+        paymentConfirmedByUserId: userId ?? null,
+      }
       orders = orders.map((order, i) => (i === index ? updated : order))
       return updated
     },
@@ -322,6 +367,48 @@ export function createDemoPosRepository(): PosRepository {
 
     async deleteTable(id: string) {
       tables = tables.filter((table) => table.id !== id)
+    },
+
+    async loadSuppliers() {
+      return suppliers
+    },
+
+    async saveSupplier(input) {
+      const timestamp = new Date().toISOString()
+      const supplier: Supplier = { id: crypto.randomUUID(), ...input, createdAt: timestamp, updatedAt: timestamp }
+      suppliers = [...suppliers, supplier]
+      return supplier
+    },
+
+    async updateSupplier(supplier: Supplier) {
+      const nextSupplier: Supplier = { ...supplier, updatedAt: new Date().toISOString() }
+      suppliers = suppliers.map((entry) => (entry.id === nextSupplier.id ? nextSupplier : entry))
+      return nextSupplier
+    },
+
+    async deleteSupplier(id: string) {
+      suppliers = suppliers.filter((supplier) => supplier.id !== id)
+    },
+
+    async loadReorderMarks() {
+      return reorderMarks
+    },
+
+    async markReorder(input) {
+      const mark: ReorderMark = {
+        id: crypto.randomUUID(),
+        productId: input.productId,
+        supplierId: input.supplierId,
+        quantity: input.quantity,
+        markedByUserId: input.userId ?? null,
+        markedAt: new Date().toISOString(),
+      }
+      reorderMarks = [mark, ...reorderMarks.filter((entry) => entry.productId !== input.productId)]
+      return mark
+    },
+
+    async clearReorderMark(id: string) {
+      reorderMarks = reorderMarks.filter((entry) => entry.id !== id)
     },
 
     async openShift(input) {
@@ -465,6 +552,31 @@ export function createDemoPosRepository(): PosRepository {
       }
 
       return { user, session }
+    },
+
+    async createStaffAccount(input) {
+      const fullName = input.fullName.trim()
+      const username = input.username.trim().toLowerCase()
+      const password = input.password.trim()
+      const roleId = input.roleId.trim()
+      if (!fullName || !username || !password || !roleId) {
+        throw new Error('Full name, username, password, and role are required.')
+      }
+      if (users.some((user) => user.username === username)) {
+        throw new Error('That username is already in use.')
+      }
+
+      const user: UserAccount = {
+        id: crypto.randomUUID(),
+        fullName,
+        username,
+        passwordHash: password,
+        roleId,
+        createdAt: new Date().toISOString(),
+      }
+
+      users = [...users, user]
+      return user
     },
 
     async updateUserRole(userId, roleId) {

@@ -297,6 +297,7 @@ async function handleCloseShift() {
   padding: var(--space-4) 20px;
   border: none;
   border-bottom: 0.5px solid var(--separator);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   backdrop-filter: var(--material-bar);
 }

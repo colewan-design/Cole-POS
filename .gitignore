@@ -4,7 +4,18 @@ apps/web/dist/
 apps/web/.env
 apps/mobile/node_modules/
 apps/mobile/www/
+apps/mobile/.env
+apps/mobile-admin/node_modules/
+apps/mobile-admin/www/
+apps/mobile-admin/.env
 *.log
 .DS_Store
 .vercel/
 recordings/
+
+# Generated native build output and packaged APKs — not source.
+build/
+artifacts/
+
+.vercel
+.env*

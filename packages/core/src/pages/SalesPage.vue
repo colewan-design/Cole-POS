@@ -99,13 +99,14 @@ function delta(current: number, previous: number) {
 }
 
 const bounds = computed(() => getBounds(range.value))
+const activeOrders = computed(() => store.orders.filter((order) => !order.voidedAt))
 const periodOrders = computed(() =>
-  store.orders.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)),
+  activeOrders.value.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)),
 )
 const previousOrders = computed(() =>
   range.value === 'all'
     ? []
-    : store.orders.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
+    : activeOrders.value.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
 )
 
 const filteredOrders = computed(() => {

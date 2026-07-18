@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { Check, ClipboardList, Package, Search, Truck, X } from '@lucide/vue'
+import { Check, ClipboardList, Package, Pencil, Plus, Search, Trash2, Truck, X } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
+import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
-import { formatCurrency, type Product } from '@pos/shared/index'
+import { formatCurrency, type Product, type ReorderMark, type Supplier } from '@pos/shared/index'
 
 const store = usePosStore()
+const auth = useAuthStore()
 
 onMounted(() => {
   if (!store.isReady) {
@@ -27,13 +29,7 @@ const supplierFilter = ref<'all' | string>('all')
 const restockingId = ref<string | null>(null)
 const restockQty = ref(1)
 
-interface SupplierProfile {
-  id: string
-  name: string
-  categoryIds: string[]
-  contact: string
-  leadTimeDays: number
-  orderWindow: string
+interface SupplierProfile extends Supplier {
   itemsCovered: number
   lowStockItems: number
   outOfStockItems: number
@@ -42,27 +38,19 @@ interface SupplierProfile {
 
 interface ReorderRow {
   product: Product
-  supplierId: string
+  supplierId: string | null
   supplierName: string
   categoryName: string
   currentQty: number
   threshold: number
   suggestedQty: number
-  suggestedCostCents: number
+  suggestedValueCents: number
   status: 'low' | 'oos'
+  mark: ReorderMark | null
 }
 
-const supplierBlueprints = [
-  { id: 'harbor-fresh', name: 'Harbor Fresh Supply Co.', categoryIds: ['produce', 'groceries', 'beverages'], leadTimeDays: 2, orderWindow: 'Mon / Thu cut-off' },
-  { id: 'north-grain', name: 'North Grain Wholesale', categoryIds: ['dairy', 'groceries', 'snacks'], leadTimeDays: 3, orderWindow: 'Daily before 3 PM' },
-  { id: 'golden-cup', name: 'Golden Cup Beverage Traders', categoryIds: ['coffee', 'tea', 'cold-drinks'], leadTimeDays: 1, orderWindow: 'Same-day local dispatch' },
-  { id: 'hearth-kitchen', name: 'Hearth Kitchen Provisions', categoryIds: ['pastry', 'starters', 'mains', 'desserts'], leadTimeDays: 2, orderWindow: 'Tue / Fri warehouse release' },
-  { id: 'bloom-beauty', name: 'Bloom Beauty Supply Co.', categoryIds: ['salon-retail'], leadTimeDays: 3, orderWindow: 'Wed cut-off, Sat delivery' },
-]
-
-function supplierForCategory(categoryId: string) {
-  return supplierBlueprints.find((supplier) => supplier.categoryIds.includes(categoryId))
-    ?? supplierBlueprints[0]
+function supplierForCategory(categoryId: string): Supplier | null {
+  return store.suppliers.find((supplier) => supplier.categoryIds.includes(categoryId)) ?? null
 }
 
 function stockRisk(product: Product): 'healthy' | 'low' | 'oos' | 'untracked' {
@@ -77,8 +65,8 @@ function categoryNameFor(categoryId: string) {
 }
 
 const supplierProfiles = computed(() => {
-  return supplierBlueprints.map((blueprint) => {
-    const products = store.products.filter((product) => blueprint.categoryIds.includes(product.categoryId) && product.stockQty !== undefined)
+  return store.suppliers.map((supplier) => {
+    const products = store.products.filter((product) => supplier.categoryIds.includes(product.categoryId) && product.stockQty !== undefined)
     const lowStockItems = products.filter((product) => stockRisk(product) === 'low').length
     const outOfStockItems = products.filter((product) => stockRisk(product) === 'oos').length
     const reorderValueCents = products.reduce((sum, product) => {
@@ -90,8 +78,7 @@ const supplierProfiles = computed(() => {
     }, 0)
 
     return {
-      ...blueprint,
-      contact: `buyers@${blueprint.id}.pos`,
+      ...supplier,
       itemsCovered: products.length,
       lowStockItems,
       outOfStockItems,
@@ -119,14 +106,15 @@ const reorderRows = computed(() => {
       const suggestedQty = Math.max(threshold * 2 - currentQty, threshold)
       return {
         product,
-        supplierId: supplier.id,
-        supplierName: supplier.name,
+        supplierId: supplier?.id ?? null,
+        supplierName: supplier?.name ?? 'No supplier assigned',
         categoryName: categoryNameFor(product.categoryId),
         currentQty,
         threshold,
         suggestedQty,
-        suggestedCostCents: suggestedQty * product.priceCents,
+        suggestedValueCents: suggestedQty * product.priceCents,
         status: stockRisk(product) as 'low' | 'oos',
+        mark: store.reorderMarks.find((entry) => entry.productId === product.id) ?? null,
       } satisfies ReorderRow
     })
     .sort((a, b) => {
@@ -175,25 +163,129 @@ const filteredReorderRows = computed(() => {
   })
 })
 
-const totalSuppliers = computed(() => supplierProfiles.value.filter((supplier) => supplier.itemsCovered > 0).length)
+const totalSuppliers = computed(() => store.suppliers.length)
 const lowStockCount = computed(() => reorderRows.value.filter((row) => row.status === 'low').length)
 const outOfStockCount = computed(() => reorderRows.value.filter((row) => row.status === 'oos').length)
-const reorderValueCents = computed(() => reorderRows.value.reduce((sum, row) => sum + row.suggestedCostCents, 0))
+const reorderValueCents = computed(() => reorderRows.value.reduce((sum, row) => sum + row.suggestedValueCents, 0))
 
-function openRestock(row: ReorderRow) {
+function openMarkForm(row: ReorderRow) {
   restockingId.value = row.product.id
-  restockQty.value = row.suggestedQty
+  restockQty.value = row.mark?.quantity ?? row.suggestedQty
 }
 
-function cancelRestock() {
+function cancelMarkForm() {
   restockingId.value = null
 }
 
-async function submitRestock(productId: string) {
+async function submitMarkOrder(row: ReorderRow) {
   if (restockQty.value > 0) {
-    await store.restockProduct(productId, restockQty.value)
+    await store.markReorder({
+      productId: row.product.id,
+      supplierId: row.supplierId,
+      quantity: restockQty.value,
+      userId: auth.currentUser?.id ?? null,
+    })
   }
   restockingId.value = null
+}
+
+async function handleReceiveMark(mark: ReorderMark) {
+  await store.receiveReorder(mark.id)
+}
+
+async function handleCancelMark(mark: ReorderMark) {
+  await store.cancelReorderMark(mark.id)
+}
+
+// --- Supplier directory CRUD ---
+
+const isSupplierFormOpen = ref(false)
+const editingSupplier = ref<Supplier | null>(null)
+const formName = ref('')
+const formContact = ref('')
+const formLeadTimeDays = ref('2')
+const formOrderWindow = ref('')
+const formCategoryIds = ref<string[]>([])
+const formError = ref('')
+const savingSupplier = ref(false)
+
+function openAddSupplierForm() {
+  editingSupplier.value = null
+  formName.value = ''
+  formContact.value = ''
+  formLeadTimeDays.value = '2'
+  formOrderWindow.value = ''
+  formCategoryIds.value = []
+  formError.value = ''
+  isSupplierFormOpen.value = true
+}
+
+function openEditSupplierForm(supplier: Supplier) {
+  editingSupplier.value = supplier
+  formName.value = supplier.name
+  formContact.value = supplier.contact
+  formLeadTimeDays.value = String(supplier.leadTimeDays)
+  formOrderWindow.value = supplier.orderWindow
+  formCategoryIds.value = [...supplier.categoryIds]
+  formError.value = ''
+  isSupplierFormOpen.value = true
+}
+
+function closeSupplierForm() {
+  isSupplierFormOpen.value = false
+}
+
+function toggleFormCategory(categoryId: string) {
+  const index = formCategoryIds.value.indexOf(categoryId)
+  if (index === -1) {
+    formCategoryIds.value.push(categoryId)
+  } else {
+    formCategoryIds.value.splice(index, 1)
+  }
+}
+
+async function submitSupplierForm() {
+  formError.value = ''
+  const leadTimeDays = Number(formLeadTimeDays.value)
+
+  if (!formName.value.trim() || !formContact.value.trim()) {
+    formError.value = 'Enter a supplier name and contact.'
+    return
+  }
+  if (!Number.isFinite(leadTimeDays) || leadTimeDays < 0) {
+    formError.value = 'Lead time must be 0 or more days.'
+    return
+  }
+
+  savingSupplier.value = true
+  try {
+    const input = {
+      name: formName.value.trim(),
+      contact: formContact.value.trim(),
+      leadTimeDays,
+      orderWindow: formOrderWindow.value.trim(),
+      // Plain-array copy — a reactive Vue array can't survive IndexedDB's
+      // structured clone (DataCloneError), which the write path silently
+      // swallows, so the save looked like it worked but never persisted.
+      categoryIds: [...formCategoryIds.value],
+    }
+
+    if (editingSupplier.value) {
+      await store.editSupplier({ ...editingSupplier.value, ...input })
+    } else {
+      await store.createSupplier(input)
+    }
+    closeSupplierForm()
+  } finally {
+    savingSupplier.value = false
+  }
+}
+
+async function deleteSupplier() {
+  if (!editingSupplier.value) return
+  if (!window.confirm(`Remove ${editingSupplier.value.name}? Items in its categories will show as unassigned in the reorder queue.`)) return
+  await store.removeSupplier(editingSupplier.value.id)
+  closeSupplierForm()
 }
 </script>
 
@@ -203,10 +295,14 @@ async function submitRestock(productId: string) {
       <div>
         <h1 class="suppliers-title">Suppliers</h1>
         <p class="suppliers-copy">
-          Supplier coverage is currently inferred from your catalog categories and stock levels, so you can already
-          manage reorder pressure and incoming replenishment before a full purchasing module is added.
+          Manage the vendors you buy from and the categories each one covers. The reorder queue below matches
+          low/out-of-stock items to a supplier automatically once its categories are set.
         </p>
       </div>
+      <button class="primary-button" type="button" @click="openAddSupplierForm">
+        <Plus :size="15" />
+        <span>Add Supplier</span>
+      </button>
     </section>
 
     <section class="suppliers-kpis">
@@ -217,17 +313,23 @@ async function submitRestock(productId: string) {
     </section>
 
     <section class="suppliers-grid">
-      <ChartCard title="Supplier Directory" summary="Inferred suppliers grouped by the categories they cover.">
-        <div class="suppliers-directory">
+      <ChartCard title="Supplier Directory" summary="The vendors you buy from, grouped by the categories they cover.">
+        <div v-if="store.suppliers.length === 0" class="suppliers-empty">
+          No suppliers yet — add one to start matching low-stock items to a vendor.
+        </div>
+        <div v-else class="suppliers-directory">
           <article v-for="supplier in filteredSuppliers" :key="supplier.id" class="supplier-card">
             <div class="supplier-card__head">
               <div class="supplier-card__icon">
                 <Truck :size="18" />
               </div>
-              <div>
+              <div class="supplier-card__head-text">
                 <h3>{{ supplier.name }}</h3>
                 <p>{{ supplier.contact }}</p>
               </div>
+              <button class="icon-button icon-button--sm" type="button" :aria-label="`Edit ${supplier.name}`" @click="openEditSupplierForm(supplier)">
+                <Pencil :size="14" />
+              </button>
             </div>
 
             <div class="supplier-card__stats">
@@ -235,11 +337,12 @@ async function submitRestock(productId: string) {
               <span>{{ supplier.leadTimeDays }} day lead time</span>
             </div>
 
-            <div class="supplier-card__chips">
+            <div v-if="supplier.categoryIds.length" class="supplier-card__chips">
               <span v-for="categoryId in supplier.categoryIds" :key="categoryId" class="supplier-chip">
                 {{ categoryNameFor(categoryId) }}
               </span>
             </div>
+            <p v-else class="supplier-card__window">No categories assigned yet.</p>
 
             <div class="supplier-card__meta">
               <div>
@@ -252,7 +355,7 @@ async function submitRestock(productId: string) {
               </div>
             </div>
 
-            <p class="supplier-card__window">{{ supplier.orderWindow }}</p>
+            <p v-if="supplier.orderWindow" class="supplier-card__window">{{ supplier.orderWindow }}</p>
           </article>
         </div>
       </ChartCard>
@@ -309,7 +412,7 @@ async function submitRestock(productId: string) {
             <th>Supplier</th>
             <th>Status</th>
             <th>Suggested Qty</th>
-            <th>Est. Cost</th>
+            <th>Reorder Value</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -334,7 +437,7 @@ async function submitRestock(productId: string) {
               <p class="suppliers-threshold">threshold {{ row.threshold }}</p>
             </td>
             <td>{{ row.suggestedQty }}</td>
-            <td>{{ formatCurrency(row.suggestedCostCents) }}</td>
+            <td>{{ formatCurrency(row.suggestedValueCents) }}</td>
             <td>
               <div class="suppliers-action">
                 <template v-if="restockingId === row.product.id">
@@ -344,25 +447,37 @@ async function submitRestock(productId: string) {
                     type="number"
                     min="1"
                     step="1"
-                    aria-label="Restock quantity"
-                    @keydown.enter.prevent="submitRestock(row.product.id)"
-                    @keydown.escape.prevent="cancelRestock"
+                    aria-label="Order quantity"
+                    @keydown.enter.prevent="submitMarkOrder(row)"
+                    @keydown.escape.prevent="cancelMarkForm"
                   >
-                  <button class="segment-button suppliers-action__btn" type="button" @click="submitRestock(row.product.id)">
+                  <button class="segment-button suppliers-action__btn" type="button" @click="submitMarkOrder(row)">
                     <Check :size="13" />
-                    Receive
+                    Mark ordered
                   </button>
-                  <button class="icon-button icon-button--sm" type="button" aria-label="Cancel" @click="cancelRestock">
+                  <button class="icon-button icon-button--sm" type="button" aria-label="Cancel" @click="cancelMarkForm">
                     <X :size="13" />
                   </button>
+                </template>
+                <template v-else-if="row.mark">
+                  <div class="suppliers-ordered">
+                    <span class="suppliers-ordered__tag">Ordered {{ row.mark.quantity }}</span>
+                    <button class="segment-button suppliers-action__btn" type="button" @click="handleReceiveMark(row.mark)">
+                      <Check :size="13" />
+                      Receive
+                    </button>
+                    <button class="icon-button icon-button--sm" type="button" aria-label="Cancel order" @click="handleCancelMark(row.mark)">
+                      <X :size="13" />
+                    </button>
+                  </div>
                 </template>
                 <button
                   v-else
                   class="segment-button suppliers-action__btn"
                   type="button"
-                  @click="openRestock(row)"
+                  @click="openMarkForm(row)"
                 >
-                  + Restock
+                  Mark as ordered
                 </button>
               </div>
             </td>
@@ -374,6 +489,78 @@ async function submitRestock(productId: string) {
         No reorder items match the current filters.
       </div>
     </section>
+
+    <Teleport to="body">
+      <div v-if="isSupplierFormOpen" class="sheet-overlay" @click.self="closeSupplierForm">
+        <div
+          class="sheet-panel suppliers-sheet"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="editingSupplier ? 'Edit supplier' : 'Add supplier'"
+          tabindex="-1"
+        >
+          <div class="sheet-grabber" />
+
+          <div class="sheet-scroll">
+            <div class="panel-section">
+              <p class="section-label">{{ editingSupplier ? 'Edit supplier' : 'Add supplier' }}</p>
+              <h2 class="panel-title">{{ editingSupplier ? editingSupplier.name : 'New supplier' }}</h2>
+            </div>
+
+            <label class="settings-field">
+              <span class="settings-row__label">Supplier name</span>
+              <input v-model="formName" class="sheet-input" type="text" placeholder="e.g. Harbor Fresh Supply Co.">
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-row__label">Contact (email or phone)</span>
+              <input v-model="formContact" class="sheet-input" type="text" placeholder="e.g. buyers@example.com">
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-row__label">Lead time (days)</span>
+              <input v-model="formLeadTimeDays" class="sheet-input" inputmode="numeric" type="number" min="0" placeholder="e.g. 2">
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-row__label">Order window (optional)</span>
+              <input v-model="formOrderWindow" class="sheet-input" type="text" placeholder="e.g. Mon / Thu cut-off">
+            </label>
+
+            <div class="settings-field">
+              <span class="settings-row__label">Categories this supplier covers</span>
+              <div class="suppliers-category-picker">
+                <label v-for="category in store.categories" :key="category.id" class="suppliers-category-option">
+                  <input
+                    type="checkbox"
+                    :checked="formCategoryIds.includes(category.id)"
+                    @change="toggleFormCategory(category.id)"
+                  >
+                  <span>{{ category.name }}</span>
+                </label>
+                <p v-if="store.categories.length === 0" class="supplier-card__window">No categories yet — add products first.</p>
+              </div>
+            </div>
+
+            <p v-if="formError" class="suppliers-form-error">{{ formError }}</p>
+
+            <div class="suppliers-sheet__actions">
+              <button v-if="editingSupplier" class="outline-danger-button" type="button" @click="deleteSupplier">
+                <Trash2 :size="16" />
+                <span>Delete supplier</span>
+              </button>
+              <button class="secondary-button" type="button" @click="closeSupplierForm">
+                <X :size="16" />
+                <span>Cancel</span>
+              </button>
+              <button class="primary-button" type="button" :disabled="savingSupplier" @click="submitSupplierForm">
+                {{ savingSupplier ? 'Saving…' : editingSupplier ? 'Save changes' : 'Create supplier' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -382,6 +569,13 @@ async function submitRestock(productId: string) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
+}
+
+.suppliers-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .suppliers-title {
@@ -439,7 +633,15 @@ async function submitRestock(productId: string) {
   align-items: center;
 }
 
-.supplier-card__head,
+.supplier-card__head {
+  gap: var(--space-3);
+}
+
+.supplier-card__head-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .suppliers-table-card__head {
   justify-content: space-between;
   gap: var(--space-4);
@@ -653,6 +855,62 @@ async function submitRestock(productId: string) {
   background: color-mix(in srgb, var(--fill) 78%, transparent);
   color: var(--text-secondary);
   text-align: center;
+}
+
+.suppliers-ordered {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.suppliers-ordered__tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.suppliers-sheet {
+  max-width: 480px;
+}
+
+.suppliers-sheet__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.suppliers-form-error {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.suppliers-category-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.suppliers-category-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: var(--type-caption);
 }
 
 @media (max-width: 1100px) {

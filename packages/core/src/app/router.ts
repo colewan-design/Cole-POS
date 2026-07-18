@@ -1,4 +1,5 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { Capacitor } from '@capacitor/core'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import AuthPage from '@pos/core/pages/AuthPage.vue'
 import DashboardPage from '@pos/core/pages/DashboardPage.vue'
 import RegisterPage from '@pos/core/pages/RegisterPage.vue'
@@ -20,12 +21,17 @@ declare module 'vue-router' {
   interface RouteMeta {
     publicOnly?: boolean
     pageKey?: AppPageKey
+    ownerOnly?: boolean
   }
 }
 
 export function createPosRouter() {
+  const history = Capacitor.isNativePlatform()
+    ? createWebHashHistory()
+    : createWebHistory('/app/')
+
   return createRouter({
-    history: createWebHistory('/app/'),
+    history,
     routes: [
       { path: '/auth',        name: 'auth',        component: AuthPage, meta: { publicOnly: true } },
       { path: '/',            redirect: { name: 'dashboard' } },
@@ -39,10 +45,10 @@ export function createPosRouter() {
       { path: '/inventory',   name: 'inventory',   component: InventoryPage, meta: { pageKey: 'inventory' }, alias: '/inventories' },
       { path: '/tables',      name: 'tables',      component: TablesPage, meta: { pageKey: 'tables' } },
       { path: '/reports',     name: 'reports',     component: ReportsPage, meta: { pageKey: 'reports' } },
-      { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations' } },
+      { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations', ownerOnly: true } },
       { path: '/register',    name: 'register',    component: RegisterPage, meta: { pageKey: 'register' } },
       { path: '/settings',    name: 'settings',    component: SettingsPage, meta: { pageKey: 'settings' } },
-      { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage, meta: { pageKey: 'diagnostics' } },
+      { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage, meta: { pageKey: 'diagnostics', ownerOnly: true } },
     ],
   })
 }

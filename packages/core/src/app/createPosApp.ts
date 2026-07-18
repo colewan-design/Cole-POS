@@ -23,6 +23,11 @@ export function createPosApp(options: { repository: PosRepository }) {
 
     if (to.meta.publicOnly) {
       if (auth.currentUser) {
+        if (!auth.firstAccessiblePage) {
+          await auth.logout()
+          return true
+        }
+
         return auth.firstAccessiblePage === 'register'
           ? { name: 'register' }
           : auth.firstAccessiblePage
@@ -35,6 +40,17 @@ export function createPosApp(options: { repository: PosRepository }) {
 
     if (!auth.currentUser) {
       return { name: 'auth', query: { redirect: to.fullPath } }
+    }
+
+    if (to.meta.ownerOnly && !auth.isOwner) {
+      if (auth.firstAccessiblePage) {
+        return auth.firstAccessiblePage === 'register'
+          ? { name: 'register' }
+          : { name: auth.firstAccessiblePage }
+      }
+
+      await auth.logout()
+      return { name: 'auth' }
     }
 
     if (to.meta.pageKey && !auth.canAccess(to.meta.pageKey)) {

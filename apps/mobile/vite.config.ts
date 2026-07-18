@@ -6,13 +6,14 @@ import path from 'node:path'
 export default defineConfig({
   plugins: [vue()],
   base: './',
-  envDir: path.resolve(__dirname, '../web'),
+  envDir: __dirname,
   publicDir: path.resolve(__dirname, '../web/public'),
   resolve: {
     alias: {
       '@pos/core': path.resolve(__dirname, '../../packages/core/src'),
       '@pos/shared': path.resolve(__dirname, '../../packages/shared/src'),
       '@pos/data': path.resolve(__dirname, '../../packages/data/src'),
+      '@pos/web': path.resolve(__dirname, '../web/src'),
     },
   },
   build: {

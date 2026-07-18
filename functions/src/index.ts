@@ -21,12 +21,19 @@ interface GuestInput {
   email?: string
 }
 
+interface FulfillmentInput {
+  method: 'pickup' | 'delivery'
+  address?: string
+}
+
 interface CreateOnlineOrderRequest {
   orgSlug: string
   storeCode: string
   businessMode: OnlineBusinessMode
   items: RequestItem[]
   guest: GuestInput
+  fulfillment: FulfillmentInput
+  paymentMethod?: 'cash' | 'ewallet'
 }
 
 interface FsProduct {
@@ -39,6 +46,17 @@ interface FsProduct {
   stockQty: number | null
 }
 
+interface ResolveStoreCodeRequest {
+  code: string
+}
+
+interface FsStore {
+  name: string
+  address?: string
+  businessMode?: string
+  pairingCode?: string
+}
+
 // Mirrors packages/shared/src/index.ts's calculateTax exactly — the whole
 // point of this function is that the client never gets to set this number.
 function calculateTax(amountCents: number, rate: number): number {
@@ -47,7 +65,7 @@ function calculateTax(amountCents: number, rate: number): number {
 
 export const createOnlineOrder = onCall<CreateOnlineOrderRequest>(async (request) => {
   const data = request.data ?? ({} as CreateOnlineOrderRequest)
-  const { orgSlug, storeCode, businessMode, items, guest } = data
+  const { orgSlug, storeCode, businessMode, items, guest, fulfillment, paymentMethod } = data
 
   if (!orgSlug || !storeCode) {
     throw new HttpsError('invalid-argument', 'orgSlug and storeCode are required.')
@@ -60,6 +78,15 @@ export const createOnlineOrder = onCall<CreateOnlineOrderRequest>(async (request
   }
   if (!guest?.name?.trim() || (!guest.phone?.trim() && !guest.email?.trim())) {
     throw new HttpsError('invalid-argument', 'A name and a phone or email are required.')
+  }
+  if (fulfillment?.method !== 'pickup' && fulfillment?.method !== 'delivery') {
+    throw new HttpsError('invalid-argument', 'A fulfillment method of pickup or delivery is required.')
+  }
+  if (fulfillment.method === 'delivery' && !fulfillment.address?.trim()) {
+    throw new HttpsError('invalid-argument', 'A delivery address is required.')
+  }
+  if (paymentMethod !== undefined && paymentMethod !== 'cash' && paymentMethod !== 'ewallet') {
+    throw new HttpsError('invalid-argument', 'paymentMethod must be cash or ewallet.')
   }
 
   const orgRef = db.doc(`organizations/${orgSlug}`)
@@ -138,7 +165,9 @@ export const createOnlineOrder = onCall<CreateOnlineOrderRequest>(async (request
       status: 'preparing',
       channel: 'online',
       paymentStatus: 'unpaid',
-      paymentMethod: null,
+      paymentMethod: paymentMethod ?? 'cash',
+      fulfillmentMethod: fulfillment.method,
+      deliveryAddress: fulfillment.method === 'delivery' ? fulfillment.address!.trim() : null,
       subtotalCents,
       taxCents,
       totalCents,
@@ -190,4 +219,41 @@ export const createOnlineOrder = onCall<CreateOnlineOrderRequest>(async (request
   })
 
   return result
+})
+
+// Lets the mobile storefront pair itself to a business owner's store at
+// runtime (customer types in a short code on first launch) instead of every
+// build being baked to one fixed org/store — see resolveAndSave in
+// apps/mobile/src/storefront/pairing.ts. Unauthenticated, same as
+// createOnlineOrder: the code itself is the access control, and this only
+// ever returns the minimal fields the storefront needs, never the full
+// store doc.
+export const resolveStoreCode = onCall<ResolveStoreCodeRequest>(async (request) => {
+  const code = request.data?.code?.trim()
+  if (!code) {
+    throw new HttpsError('invalid-argument', 'A store code is required.')
+  }
+
+  const snap = await db.collectionGroup('stores').where('pairingCode', '==', code).limit(1).get()
+  if (snap.empty) {
+    throw new HttpsError('not-found', "We couldn't find a store with that code.")
+  }
+
+  const storeDoc = snap.docs[0]
+  const store = storeDoc.data() as FsStore
+  const orgRef = storeDoc.ref.parent.parent
+  if (!orgRef) {
+    throw new HttpsError('internal', 'Store is missing its parent organization.')
+  }
+  if (!store.businessMode || !SUPPORTED_MODES.includes(store.businessMode as OnlineBusinessMode)) {
+    throw new HttpsError('failed-precondition', 'This store is not set up for online ordering.')
+  }
+
+  return {
+    orgSlug: orgRef.id,
+    storeCode: storeDoc.id,
+    businessMode: store.businessMode as OnlineBusinessMode,
+    storeName: store.name,
+    storeAddress: store.address ?? '',
+  }
 })

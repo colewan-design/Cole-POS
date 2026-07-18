@@ -329,11 +329,12 @@ function visitLabel(profile: CustomerProfile) {
 }
 
 const bounds = computed(() => getBounds(range.value))
-const periodOrders = computed(() => store.orders.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)))
+const activeOrders = computed(() => store.orders.filter((order) => !order.voidedAt))
+const periodOrders = computed(() => activeOrders.value.filter((order) => inBounds(order, bounds.value.start, bounds.value.end)))
 const priorOrders = computed(() =>
   range.value === 'all'
     ? []
-    : store.orders.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
+    : activeOrders.value.filter((order) => inBounds(order, bounds.value.prevStart, bounds.value.prevEnd)),
 )
 
 const customerProfiles = computed(() => buildProfiles(periodOrders.value, store.customers))

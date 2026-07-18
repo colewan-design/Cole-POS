@@ -1,392 +1,292 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
-import { ChevronDown, Heart, Search, ShoppingBag, User } from '@lucide/vue'
-import { businessModeLabel } from '@pos/shared/index'
-import { BUSINESS_MODE } from '@pos/web/storefront/firebase'
+import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
+import { Heart, Search, ShoppingCart, Store } from '@lucide/vue'
 import { useStorefrontCart } from '@pos/web/storefront/cart'
-import { useStorefrontCatalog } from '@pos/web/storefront/catalog'
 import { useStorefrontSearch } from '@pos/web/storefront/search'
 import { useStorefrontWishlist } from '@pos/web/storefront/wishlist'
-import { storefrontCopy } from '@pos/web/storefront/copy'
 
+const route = useRoute()
+const router = useRouter()
 const { itemCount } = useStorefrontCart()
-const { count: lovedCount, showLovedOnly, toggleLovedOnly } = useStorefrontWishlist()
+const wishlist = useStorefrontWishlist()
 const { query } = useStorefrontSearch()
-const catalog = useStorefrontCatalog()
-const copy = storefrontCopy(BUSINESS_MODE)
 
-const categoriesOpen = ref(false)
-const dropdownEl = ref<HTMLElement | null>(null)
-const dropdownTriggerEl = ref<HTMLElement | null>(null)
-const dropdownPanelEl = ref<HTMLElement | null>(null)
-const dropdownPos = ref({ top: 0, left: 0 })
-
-// Teleported to <body> (see template) so the panel can't be clipped by
-// storefront__nav-scroll's overflow-x: auto — per the CSS overflow spec,
-// pairing overflow-x: auto with overflow-y: visible on the same element
-// computes overflow-y to auto too, which was clipping the panel.
-function updateDropdownPos() {
-  const rect = dropdownTriggerEl.value?.getBoundingClientRect()
-  if (!rect) return
-  dropdownPos.value = { top: rect.bottom + 10, left: rect.left }
-}
-
-function toggleCategories() {
-  categoriesOpen.value = !categoriesOpen.value
-  if (categoriesOpen.value) updateDropdownPos()
-}
-
-function scrollToSection(id: string) {
-  categoriesOpen.value = false
+function goToSection(id: string) {
+  if (route.name !== 'catalog') {
+    void router.push({ name: 'catalog', hash: `#${id}` })
+    return
+  }
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function handleOutsideClick(event: MouseEvent) {
-  if (!categoriesOpen.value) return
-  const target = event.target as Node
-  if (dropdownEl.value?.contains(target) || dropdownPanelEl.value?.contains(target)) return
-  categoriesOpen.value = false
+function toggleLoved() {
+  wishlist.toggleLovedOnly()
+  goToSection('categories')
 }
-
-function handleReposition() {
-  if (categoriesOpen.value) updateDropdownPos()
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleOutsideClick)
-  window.addEventListener('resize', handleReposition)
-  window.addEventListener('scroll', handleReposition, true)
-})
-onUnmounted(() => {
-  document.removeEventListener('click', handleOutsideClick)
-  window.removeEventListener('resize', handleReposition)
-  window.removeEventListener('scroll', handleReposition, true)
-})
 </script>
 
 <template>
   <div class="storefront">
-    <header class="storefront__header">
-      <div class="storefront__header-inner">
-        <div class="storefront__topbar">
-          <RouterLink to="/" class="storefront__brand">
-            Cole POS <span class="storefront__brand-mode">&middot; {{ businessModeLabel(BUSINESS_MODE) }}</span>
+    <header class="sf-header">
+      <div class="sf-header__row">
+        <RouterLink to="/" class="sf-brand">
+          <span class="sf-brand__icon"><Store :size="20" /></span>
+          <span class="sf-brand__text">
+            <span class="sf-brand__mark">Cole Store</span>
+            <span class="sf-brand__sub">Order online for pickup</span>
+          </span>
+        </RouterLink>
+
+        <nav class="sf-nav" aria-label="Store sections">
+          <RouterLink to="/" class="sf-nav__link" :class="{ 'sf-nav__link--active': route.name === 'catalog' }">
+            Shop
           </RouterLink>
+          <button type="button" class="sf-nav__link" @click="goToSection('categories')">Categories</button>
+          <button type="button" class="sf-nav__link" @click="goToSection('deals')">Deals</button>
+        </nav>
 
-          <label class="storefront__search">
-            <Search :size="16" />
-            <input v-model="query" type="search" placeholder="Search products..." />
-          </label>
+        <label class="sf-search">
+          <Search :size="17" />
+          <input v-model="query" type="search" placeholder="Search products" />
+        </label>
 
-          <div class="storefront__utility">
-            <button
-              type="button"
-              class="storefront__icon-btn"
-              :class="{ 'storefront__icon-btn--active': showLovedOnly }"
-              title="Show loved items"
-              @click="toggleLovedOnly(); scrollToSection('categories')"
-            >
-              <Heart :size="18" :fill="lovedCount > 0 ? 'currentColor' : 'none'" />
-              <span v-if="lovedCount > 0" class="storefront__icon-count">{{ lovedCount }}</span>
-            </button>
-            <RouterLink to="/checkout" class="storefront__icon-btn" title="Cart">
-              <ShoppingBag :size="18" />
-              <span v-if="itemCount > 0" class="storefront__icon-count">{{ itemCount }}</span>
-            </RouterLink>
-            <button type="button" class="storefront__login" title="Coming soon">
-              <User :size="15" />
-              Login/Signup
-            </button>
-          </div>
-        </div>
+        <div class="sf-header__actions">
+          <button
+            type="button"
+            class="sf-icon-btn"
+            :class="{ 'sf-icon-btn--active': wishlist.showLovedOnly.value }"
+            aria-label="Show wishlist"
+            @click="toggleLoved"
+          >
+            <Heart :size="19" :fill="wishlist.count.value > 0 ? 'currentColor' : 'none'" />
+            <span v-if="wishlist.count.value > 0" class="sf-badge">{{ wishlist.count.value }}</span>
+          </button>
 
-        <div class="storefront__nav-scroll">
-          <nav class="storefront__nav">
-            <div class="storefront__nav-primary">
-              <a href="#top" class="storefront__nav-link" @click.prevent="scrollToSection('top')">Shop</a>
-              <div class="storefront__nav-dropdown" ref="dropdownEl">
-                <button ref="dropdownTriggerEl" type="button" class="storefront__nav-link" @click="toggleCategories">
-                  Categories <ChevronDown :size="14" />
-                </button>
-                <Teleport to="body">
-                  <div
-                    v-if="categoriesOpen"
-                    ref="dropdownPanelEl"
-                    class="storefront__dropdown-panel"
-                    :style="{ top: `${dropdownPos.top}px`, left: `${dropdownPos.left}px` }"
-                  >
-                    <p v-if="catalog.categories.length === 0" class="storefront__dropdown-empty">No categories yet</p>
-                    <button
-                      v-for="category in catalog.categories"
-                      :key="category.id"
-                      type="button"
-                      class="storefront__dropdown-item"
-                      @click="scrollToSection('categories')"
-                    >
-                      {{ category.name }}
-                    </button>
-                  </div>
-                </Teleport>
-              </div>
-              <a href="#deals" class="storefront__nav-link" @click.prevent="scrollToSection('deals')">Deals</a>
-              <a href="#categories" class="storefront__nav-link" @click.prevent="scrollToSection('categories')">{{
-                copy.navFourthLabel
-              }}</a>
-              <button type="button" class="storefront__nav-link">About</button>
-            </div>
-            <div class="storefront__nav-secondary">
-              <button type="button" class="storefront__nav-link storefront__nav-link--muted">Policy</button>
-              <button type="button" class="storefront__nav-link storefront__nav-link--muted">FAQ's</button>
-              <button type="button" class="storefront__nav-link storefront__nav-link--muted">Help &amp; Support</button>
-            </div>
-          </nav>
+          <RouterLink to="/checkout" class="sf-icon-btn sf-icon-btn--cart" aria-label="Open cart">
+            <ShoppingCart :size="19" />
+            <span>Cart</span>
+            <span v-if="itemCount > 0" class="sf-badge">{{ itemCount > 99 ? '99+' : itemCount }}</span>
+          </RouterLink>
         </div>
       </div>
     </header>
 
-    <main id="top" class="storefront__main">
+    <main id="top" class="sf-main">
       <RouterView />
     </main>
+
+    <footer class="sf-footer">
+      <div class="sf-footer__row">
+        <span class="sf-brand__mark">Cole Store</span>
+        <p>Orders are prepared in store — pay when you pick up. No online payment is collected.</p>
+      </div>
+    </footer>
   </div>
 </template>
 
 <style scoped>
 .storefront {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
 }
 
-.storefront__header {
+.sf-header {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 40;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--separator);
 }
 
-.storefront__header-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 var(--space-6);
-  overflow: visible;
-}
-
-.storefront__topbar {
+.sf-header__row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: var(--space-6);
-  padding: var(--space-4) 0;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-6);
 }
 
-.storefront__brand {
-  flex-shrink: 0;
-  font-weight: 800;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.storefront__brand-mode {
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.storefront__search {
-  display: flex;
+.sf-brand {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
-  padding: 9px var(--space-4);
-  border-radius: var(--radius-pill);
-  background: var(--fill);
-  color: var(--text-tertiary);
-}
-
-.storefront__search input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: none;
-  outline: none;
-  font-size: 14px;
-  font-family: inherit;
+  text-decoration: none;
   color: var(--text-primary);
 }
 
-.storefront__utility {
-  display: flex;
+.sf-brand__icon {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-text-on);
   flex-shrink: 0;
 }
 
-.storefront__icon-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--separator);
-  border-radius: 50%;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.storefront__icon-btn--active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.storefront__icon-count {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.storefront__login {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px var(--space-4);
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--text-primary);
-  color: var(--bg-elevated);
-  font-family: inherit;
-  font-weight: 700;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.storefront__nav-scroll {
-  overflow-x: auto;
-  overflow-y: visible;
-  padding: var(--space-2) 0 var(--space-3);
-}
-
-.storefront__nav {
+.sf-brand__text {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-width: max-content;
-  position: relative;
+  flex-direction: column;
+  line-height: 1.15;
 }
 
-.storefront__nav-primary,
-.storefront__nav-secondary {
+.sf-brand__mark {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sf-brand__sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.sf-nav {
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  flex-shrink: 0;
 }
 
-.storefront__nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.sf-nav__link {
   border: none;
   background: none;
   padding: 0;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-weight: 600;
-  font-size: 13.5px;
+  color: var(--text-secondary);
+  font: 600 14px/1 inherit;
   text-decoration: none;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.storefront__nav-link--muted {
-  color: var(--text-tertiary);
-  font-weight: 500;
-  font-size: 12.5px;
+.sf-nav__link--active {
+  color: var(--text-primary);
 }
 
-.storefront__nav-dropdown {
-  position: relative;
-  overflow: visible;
-}
-
-.storefront__dropdown-panel {
-  position: fixed;
-  z-index: 30;
+.sf-search {
   display: flex;
-  flex-direction: column;
-  min-width: 180px;
-  padding: var(--space-2);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-lg);
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: stretch;
+  max-width: 380px;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  height: 38px;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-tertiary);
 }
 
-.storefront__dropdown-empty {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
+.sf-search input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: 500 13.5px/1 inherit;
+}
+
+.sf-search input::placeholder {
   color: var(--text-tertiary);
+}
+
+.sf-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sf-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  color: var(--text-secondary);
+  font: 700 13px/1 inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sf-icon-btn--active {
+  color: var(--accent);
+}
+
+.sf-icon-btn--cart {
+  background: var(--accent);
+  color: var(--accent-text-on);
+}
+
+.sf-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.sf-main {
+  flex: 1;
+  max-width: 1160px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.sf-footer {
+  border-top: 1px solid var(--separator);
+  background: var(--bg-elevated);
+}
+
+.sf-footer__row {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sf-footer p {
+  margin: 0;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
-.storefront__dropdown-item {
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  text-align: left;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.storefront__dropdown-item:hover {
-  background: var(--fill);
-}
-
-.storefront__main {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 var(--space-6) var(--space-16);
-}
-
-@media (max-width: 720px) {
-  .storefront__header-inner {
-    padding: 0 var(--space-4);
+@media (max-width: 860px) {
+  .sf-header__row {
+    grid-template-columns: auto 1fr auto;
   }
 
-  .storefront__topbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
+  .sf-nav {
+    display: none;
   }
 
-  .storefront__search {
-    order: 3;
-    flex-basis: 100%;
+  .sf-search {
+    max-width: none;
+  }
+
+  .sf-icon-btn--cart span:not(.sf-badge) {
+    display: none;
   }
 }
 </style>

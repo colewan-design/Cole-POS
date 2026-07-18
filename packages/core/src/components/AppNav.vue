@@ -4,6 +4,7 @@ import {
   Boxes,
   LayoutDashboard,
   LayoutGrid,
+  type LucideIcon,
   Package,
   Plug,
   ReceiptText,
@@ -16,13 +17,22 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useAuthStore } from '@pos/core/stores/auth'
+import type { AppPageKey } from '@pos/shared/index'
 
 const emit = defineEmits<{ navigate: [] }>()
 const route = useRoute()
 const store = usePosStore()
 const auth = useAuthStore()
 
-const allNavItems = [
+interface NavItem {
+  page: AppPageKey
+  label: string
+  icon: LucideIcon
+  to: string
+  ownerOnly?: boolean
+}
+
+const allNavItems: NavItem[] = [
   { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
   { page: 'register', label: 'Register', icon: ShoppingCart, to: '/register' },
   { page: 'sales', label: 'Sales', icon: BarChart3, to: '/sales' },
@@ -34,12 +44,15 @@ const allNavItems = [
   { page: 'employees', label: 'Employees', icon: UserCircle2, to: '/employees' },
   { page: 'inventory', label: 'Inventory', icon: Boxes, to: '/inventory' },
   { page: 'reports', label: 'Reports', icon: ShoppingCart, to: '/reports' },
-  { page: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations' },
+  { page: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations', ownerOnly: true },
 ] as const
 
 const navItems = computed(() =>
   allNavItems.filter((item) => {
     if (item.page === 'tables' && store.settings.businessMode !== 'restaurant') {
+      return false
+    }
+    if (item.ownerOnly && !auth.isOwner) {
       return false
     }
     return auth.canAccess(item.page)
@@ -79,6 +92,7 @@ function isActive(path: string) {
 .workspace-nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: var(--space-2);
 }
 
