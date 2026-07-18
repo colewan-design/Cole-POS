@@ -399,6 +399,38 @@ class BrowserIndexedDbStore implements DataStore {
   }
 }
 
+// Wipes every pos.* key from both localStorage and IndexedDB (the entire
+// local cache — session, users, roles, settings, catalog, orders, ...).
+// The local store is a single global cache keyed by fixed storageKeys, not
+// partitioned per organization/store, so a browser that switches which
+// tenant it's bound to (see apps/web/src/tenantBinding.ts) must call this
+// first — otherwise a stale session/catalog from whatever tenant this
+// browser used previously leaks into the newly bound one (e.g. a leftover
+// guest session showing up as "logged in" for a brand-new store).
+export async function clearLocalPosCache(): Promise<void> {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  for (const key of Object.values(storageKeys)) {
+    window.localStorage.removeItem(key)
+  }
+  window.localStorage.removeItem(indexedDbConfig.migrationKey)
+
+  if (!('indexedDB' in window)) {
+    return
+  }
+
+  await new Promise<void>((resolve) => {
+    const request = window.indexedDB.deleteDatabase(indexedDbConfig.databaseName)
+    // Best-effort — a stuck delete (onblocked, e.g. another tab still has the
+    // DB open) shouldn't prevent the new tenant from booting.
+    request.onsuccess = () => resolve()
+    request.onerror = () => resolve()
+    request.onblocked = () => resolve()
+  })
+}
+
 function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>): SyncConfig | null {
   const cfg = input as Partial<SyncConfig>
   if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode || !cfg.pairingCode) {

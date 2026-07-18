@@ -1,3 +1,5 @@
+import type { BusinessMode } from '@pos/shared/index'
+
 // Client-side override for which organization/store the staff app (app.html)
 // talks to. Absent by default — src/main.ts falls back to the build-time
 // VITE_POS_ORGANIZATION_SLUG/VITE_POS_STORE_CODE env vars, which is the
@@ -22,6 +24,38 @@ export function readStaffTenant(): StaffTenant | null {
     const parsed = JSON.parse(raw) as Partial<StaffTenant>
     return parsed.organizationSlug && parsed.storeCode
       ? { organizationSlug: parsed.organizationSlug, storeCode: parsed.storeCode }
+      : null
+  } catch {
+    return null
+  }
+}
+
+// One business per store owner, for now: whatever they entered on the
+// signup form (business name/type) becomes that store's actual settings on
+// first boot, instead of landing on empty defaults they'd have to redo in
+// Settings. Only written on signup, not on pairing an existing store — a
+// store that already exists already has its own settings, and re-pairing a
+// second device for it must not reset them.
+const PENDING_INITIAL_SETTINGS_KEY = 'pos_staff_pending_settings'
+
+export interface PendingInitialSettings {
+  businessName: string
+  businessMode: BusinessMode
+}
+
+export function writePendingInitialSettings(settings: PendingInitialSettings) {
+  window.localStorage.setItem(PENDING_INITIAL_SETTINGS_KEY, JSON.stringify(settings))
+}
+
+// Read-and-clear — applied at most once, right after the signup that queued it.
+export function consumePendingInitialSettings(): PendingInitialSettings | null {
+  try {
+    const raw = window.localStorage.getItem(PENDING_INITIAL_SETTINGS_KEY)
+    if (!raw) return null
+    window.localStorage.removeItem(PENDING_INITIAL_SETTINGS_KEY)
+    const parsed = JSON.parse(raw) as Partial<PendingInitialSettings>
+    return parsed.businessName && parsed.businessMode
+      ? { businessName: parsed.businessName, businessMode: parsed.businessMode }
       : null
   } catch {
     return null

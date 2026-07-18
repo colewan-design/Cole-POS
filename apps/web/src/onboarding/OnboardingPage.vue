@@ -3,7 +3,7 @@ import { Eye, EyeOff } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import { businessModeLabel, type BusinessMode } from '@pos/shared/index'
-import { writeStaffTenant } from '@pos/web/tenantBinding'
+import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
 import { GCASH_ACCOUNT_NAME, GCASH_NUMBER, PLAN_PRICE_PESOS } from './pricingConstants'
 
 const mode = ref<'signup' | 'pair'>('signup')
@@ -35,13 +35,16 @@ function clearError() {
   errorMessage.value = ''
 }
 
-async function bindAndEnter(body: { organizationSlug?: string; storeCode?: string; error?: string }, fallbackError: string) {
+function bindAndEnter(
+  body: { organizationSlug?: string; storeCode?: string; error?: string },
+  fallbackError: string,
+): boolean {
   if (!body.organizationSlug || !body.storeCode) {
     errorMessage.value = body.error || fallbackError
-    return
+    return false
   }
   writeStaffTenant({ organizationSlug: body.organizationSlug, storeCode: body.storeCode })
-  window.location.href = '/app'
+  return true
 }
 
 async function submitSignup() {
@@ -59,7 +62,12 @@ async function submitSignup() {
       errorMessage.value = body.error || 'Unable to create your store.'
       return
     }
-    await bindAndEnter(body, 'Unable to create your store.')
+    if (bindAndEnter(body, 'Unable to create your store.')) {
+      // Only on signup — pairing binds to an *existing* store, which already
+      // has its own settings that must not be reset.
+      writePendingInitialSettings({ businessName: signupForm.businessName, businessMode: signupForm.businessMode })
+      window.location.href = '/app'
+    }
   } catch {
     errorMessage.value = 'Something went wrong — check your connection and try again.'
   } finally {
@@ -82,7 +90,9 @@ async function submitPairing() {
       errorMessage.value = body.error || 'Unable to find that store.'
       return
     }
-    await bindAndEnter(body, 'Unable to find that store.')
+    if (bindAndEnter(body, 'Unable to find that store.')) {
+      window.location.href = '/app'
+    }
   } catch {
     errorMessage.value = 'Something went wrong — check your connection and try again.'
   } finally {
