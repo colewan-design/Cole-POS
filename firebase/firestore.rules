@@ -7,6 +7,39 @@ service cloud.firestore {
     function isAdmin() { return signedIn() && userDoc().roleKey == 'admin'; }
     function isNewAccount() { return !exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
 
+    // --- Financial-integrity checks -----------------------------------
+    // These don't (and can't, in rules) re-derive every number from first
+    // principles — e.g. an order's subtotal still isn't cross-checked
+    // against its line items, since those are separate document writes in
+    // the same transaction. What they do stop is a client writing a
+    // document whose own numbers don't add up: a mismatched total, a
+    // shift's expected cash drifting from opening+sales+movements, or a
+    // variance that doesn't match counted-vs-expected. That closes off the
+    // simplest form of tampering — editing a number after the fact rather
+    // than through the app's own math — without requiring every write to
+    // move behind a server-validated API endpoint.
+    function orderMoneyValid(data) {
+      return data.totalCents == data.subtotalCents + data.taxCents
+        && data.subtotalCents >= 0 && data.taxCents >= 0 && data.tenderedCents >= 0
+        && data.changeCents == (data.tenderedCents > data.totalCents ? data.tenderedCents - data.totalCents : 0);
+    }
+
+    // totalSalesCents/orderCount were added after this shift schema first
+    // shipped — older shift docs may not carry them, so they fall back the
+    // same way the client's read path already does (mapFsShift).
+    function shiftMathValid(data) {
+      return data.expectedCashCents == data.openingCashCents + data.cashSalesCents + data.payInsCents - data.payOutsCents
+        && data.openingCashCents >= 0 && data.cashSalesCents >= 0
+        && data.payInsCents >= 0 && data.payOutsCents >= 0
+        && data.get('totalSalesCents', data.cashSalesCents) >= data.cashSalesCents
+        && data.get('orderCount', 0) >= 0;
+    }
+
+    function shiftCloseValid(data) {
+      return data.closedAt == null
+        || (data.closingCashCents != null && data.varianceCashCents == data.closingCashCents - data.expectedCashCents);
+    }
+
     match /organizations/{orgId} {
       allow read: if signedIn();                 // any authenticated user resolves slug -> org
       allow create: if false;                     // provisioned out-of-band (console/seed script)
@@ -38,7 +71,16 @@ service cloud.firestore {
         allow write: if signedIn() && orgId == userOrgId();
       }
       match /stores/{storeId}/orders/{orderId} {
-        allow read, write: if signedIn() && orgId == userOrgId();
+        allow read: if signedIn() && orgId == userOrgId();
+        allow create: if signedIn() && orgId == userOrgId() && orderMoneyValid(request.resource.data);
+        // Settling payment (or any future status update) can change payment
+        // fields, but must not retroactively change what the sale actually
+        // added up to.
+        allow update: if signedIn() && orgId == userOrgId() && orderMoneyValid(request.resource.data)
+          && request.resource.data.subtotalCents == resource.data.subtotalCents
+          && request.resource.data.taxCents == resource.data.taxCents
+          && request.resource.data.totalCents == resource.data.totalCents;
+        allow delete: if false;
         // Public order-tracking link: the doc ID is the capability token. Only
         // single-doc "get" is public — "list" stays staff-only, so orders can
         // never be browsed/enumerated by an outsider.
@@ -60,8 +102,34 @@ service cloud.firestore {
         allow read, write: if signedIn() && orgId == userOrgId();
       }
       match /stores/{storeId}/shifts/{shiftId} {
-        allow read, write: if signedIn() && orgId == userOrgId();
-        match /cashMovements/{movementId} { allow read, write: if signedIn() && orgId == userOrgId(); }
+        allow read: if signedIn() && orgId == userOrgId();
+        allow create: if signedIn() && orgId == userOrgId()
+          && request.resource.data.closedAt == null
+          && request.resource.data.cashSalesCents == 0
+          && request.resource.data.get('totalSalesCents', 0) == 0
+          && request.resource.data.get('orderCount', 0) == 0
+          && request.resource.data.payInsCents == 0
+          && request.resource.data.payOutsCents == 0
+          && shiftMathValid(request.resource.data);
+        allow update: if signedIn() && orgId == userOrgId()
+          && shiftMathValid(request.resource.data)
+          && shiftCloseValid(request.resource.data)
+          // A closed shift is final — no reopening, and its opening float
+          // can't be rewritten after the fact.
+          && !(resource.data.closedAt != null && request.resource.data.closedAt == null)
+          && request.resource.data.openingCashCents == resource.data.openingCashCents
+          && request.resource.data.openedAt == resource.data.openedAt;
+        allow delete: if false;
+
+        // Append-only ledger — a pay-in/pay-out is either real or it isn't;
+        // editing one after the fact is how a shortage gets hidden.
+        match /cashMovements/{movementId} {
+          allow read: if signedIn() && orgId == userOrgId();
+          allow create: if signedIn() && orgId == userOrgId()
+            && request.resource.data.amountCents > 0
+            && (request.resource.data.movementType == 'pay_in' || request.resource.data.movementType == 'pay_out');
+          allow update, delete: if false;
+        }
       }
       // Idempotency guard: once written, a sync event can never be changed.
       match /stores/{storeId}/syncEvents/{eventId} {
