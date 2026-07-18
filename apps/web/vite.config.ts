@@ -27,6 +27,16 @@ function entryRouteAliases(): Plugin {
 
     if (req.url?.startsWith('/store/')) {
       req.url = '/store.html'
+      return
+    }
+
+    if (req.url === '/signup' || req.url?.startsWith('/signup?')) {
+      req.url = req.url.replace('/signup', '/signup.html')
+      return
+    }
+
+    if (req.url === '/platform-admin' || req.url?.startsWith('/platform-admin?')) {
+      req.url = req.url.replace('/platform-admin', '/platform-admin.html')
     }
   }
   return {
@@ -64,6 +74,8 @@ export default defineConfig({
         app: path.resolve(__dirname, 'app.html'),
         landing: path.resolve(__dirname, 'landing.html'),
         store: path.resolve(__dirname, 'store.html'),
+        signup: path.resolve(__dirname, 'signup.html'),
+        platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
       },
     },
   },

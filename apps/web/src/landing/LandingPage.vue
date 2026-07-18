@@ -18,12 +18,6 @@ function onCtaPointerLeave() {
   ctaParticles.value?.clearPointer()
 }
 
-const submitted = ref(false)
-function handleSubmit(e: Event) {
-  e.preventDefault()
-  submitted.value = true
-}
-
 const vReveal: ObjectDirective<HTMLElement, number | undefined> = {
   mounted(el, binding) {
     el.classList.add('reveal')
@@ -61,7 +55,7 @@ const vReveal: ObjectDirective<HTMLElement, number | undefined> = {
       </ul>
       <div class="lp-nav-right">
         <a href="/app/auth" class="lp-nav-login">Log in</a>
-        <a href="/app/auth" class="lp-nav-cta">Sign up</a>
+        <a href="/signup" class="lp-nav-cta">Sign up</a>
       </div>
     </nav>
 
@@ -233,20 +227,14 @@ const vReveal: ObjectDirective<HTMLElement, number | undefined> = {
         <ParticleField ref="ctaParticles" variant="dark" :density="55" :repel-radius="0.45" :repel-strength="0.35" />
       </div>
       <div class="lp-container lp-cta-inner">
-        <p v-reveal="0" class="lp-eyebrow-label lp-eyebrow-label--cta">Early access</p>
+        <p v-reveal="0" class="lp-eyebrow-label lp-eyebrow-label--cta">Get started</p>
         <h2 v-reveal="0" class="lp-cta-title">Ready to open your store?</h2>
-        <p v-reveal="0" class="lp-cta-stat">Join the waitlist — <strong>checkout in under 10 seconds</strong>, free during early access.</p>
+        <p v-reveal="0" class="lp-cta-stat">Create your store and start selling in minutes — <strong>checkout in under 10 seconds</strong>.</p>
 
-        <form v-if="!submitted" v-reveal="140" class="lp-email-form" @submit="handleSubmit">
-          <input class="lp-email-input" type="email" placeholder="your@email.com" required autocomplete="email" />
-          <button type="submit" class="lp-btn-accent">Request access</button>
-        </form>
-        <p v-else class="lp-form-thanks">✓ You're on the list — we'll be in touch soon.</p>
+        <a v-reveal="140" href="/signup" class="lp-btn-accent">Create your store</a>
 
-        <template v-if="!submitted">
-          <p v-reveal="260" class="lp-cta-reassure">We'll only reach out when your spot is ready — no newsletters, no spam.</p>
-          <p v-reveal="260" class="lp-cta-secondary">Not ready to commit? <a href="/app">Explore the app</a> first.</p>
-        </template>
+        <p v-reveal="260" class="lp-cta-reassure">Pay via GCash — your store is ready the moment you sign up.</p>
+        <p v-reveal="260" class="lp-cta-secondary">Not ready to commit? <a href="/app">Explore the app</a> first.</p>
       </div>
     </section>
 

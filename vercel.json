@@ -23,6 +23,8 @@
     { "source": "/app/(.*)", "destination": "/app.html"    },
     { "source": "/store",   "destination": "/store.html"   },
     { "source": "/store/(.*)", "destination": "/store.html" },
+    { "source": "/signup",  "destination": "/signup.html"  },
+    { "source": "/platform-admin", "destination": "/platform-admin.html" },
     { "source": "/",        "destination": "/index.html"   }
   ]
 }

@@ -58,6 +58,14 @@ service cloud.firestore {
         allow read: if signedIn() && orgId == userOrgId();
         allow write: if false;
       }
+      match /private/{docId} {
+        // Payment/subscription data (GCash reference, plan, amountCents) —
+        // never client-readable by anyone, in any org. organizations/{orgId}
+        // itself is readable by any signed-in user of any org (see `allow
+        // read` above), so this can't live there. api/signup.ts and
+        // api/platform-admin.ts use the Admin SDK, which bypasses rules.
+        allow read, write: if false;
+      }
       match /roles/{roleKey} {
         allow read: if signedIn() && orgId == userOrgId();
         allow write: if isAdmin() && orgId == userOrgId();
