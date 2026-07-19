@@ -88,6 +88,7 @@ interface FsUser {
 interface FsCategory {
   name: string
   sortOrder: number
+  deletedAt?: Timestamp | null
 }
 
 interface FsProduct {
@@ -755,7 +756,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       ])
 
       return {
-        categories: catSnap.docs.map(mapFsCategory),
+        categories: catSnap.docs.filter((d) => !(d.data() as FsCategory).deletedAt).map(mapFsCategory),
         products: prodSnap.docs.map(mapFsProduct),
         cursor: new Date().toISOString(),
       }
@@ -773,7 +774,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       ])
 
       return {
-        categories: catSnap.docs.map(mapFsCategory),
+        categories: catSnap.docs.filter((d) => !(d.data() as FsCategory).deletedAt).map(mapFsCategory),
         products: prodSnap.docs.map(mapFsProduct),
         cursor: new Date().toISOString(),
       }
