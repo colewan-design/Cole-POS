@@ -580,6 +580,13 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
         return null
       }
 
+      // Platform-operator kill switch (api/platform-admin.ts) — an org can be
+      // locked out entirely without touching any individual user account.
+      const orgSnap = await getDoc(doc(db, 'organizations', config.organizationSlug))
+      if (orgSnap.data()?.suspended === true) {
+        return null
+      }
+
       const userData = userSnap.data() as FsUser
       const { organizationId, storeId, storeName } = await resolveOrgStore()
 
