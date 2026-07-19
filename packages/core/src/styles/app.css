@@ -1590,9 +1590,6 @@ button {
 
 .settings-page {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-6);
   width: 100%;
   padding: var(--space-6) 0;
 }
@@ -1601,49 +1598,6 @@ button {
   margin: 0;
   font: var(--type-title1);
   color: var(--text-primary);
-}
-
-.settings-nav {
-  position: sticky;
-  top: var(--space-6);
-  display: grid;
-  align-content: start;
-  gap: var(--space-1);
-}
-
-.settings-nav__title {
-  margin: 0 0 var(--space-2) var(--space-3);
-  color: var(--text-secondary);
-  font: var(--type-caption);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.settings-nav__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 40px;
-  padding: 0 var(--space-3);
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  font: var(--type-subhead);
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.settings-nav__item:hover {
-  background: var(--fill);
-  color: var(--text-primary);
-}
-
-.settings-nav__item--active {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  font-weight: 600;
 }
 
 .settings-main {
@@ -1760,23 +1714,6 @@ button {
 }
 
 @media (max-width: 880px) {
-  .settings-page {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .settings-nav {
-    position: static;
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    overflow-x: auto;
-    padding-bottom: var(--space-2);
-    border-bottom: 0.5px solid var(--separator);
-  }
-
-  .settings-nav__title {
-    display: none;
-  }
-
   .settings-appearance-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2158,6 +2095,7 @@ button {
   justify-content: space-between;
   gap: var(--space-3);
   width: 100%;
+  height: 100%;
   min-height: 44px;
   padding: var(--space-3) var(--space-4);
   border: none;
@@ -2197,6 +2135,8 @@ button {
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-md);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .menu-row__option {
@@ -2983,6 +2923,13 @@ button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.category-row__error {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--danger-600, #b42318);
+  font: var(--type-caption);
 }
 
 /* ── Product Sheet ──────────────────────────────────────────────────────── */

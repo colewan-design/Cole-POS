@@ -362,6 +362,9 @@ const addingCategory = ref(false)
 const editingCategoryId = ref<string | null>(null)
 const editingCategoryName = ref('')
 const confirmDeleteCategoryId = ref<string | null>(null)
+const savingCategory = ref(false)
+const deletingCategory = ref(false)
+const categoryActionError = ref('')
 
 function productCountForCategory(id: string) {
   return store.products.filter((p) => p.categoryId === id).length
@@ -370,9 +373,17 @@ function productCountForCategory(id: string) {
 async function submitNewCategory() {
   const name = newCategoryName.value.trim()
   if (!name) return
-  await store.createCategory(name)
-  newCategoryName.value = ''
-  addingCategory.value = false
+  savingCategory.value = true
+  categoryActionError.value = ''
+  try {
+    await store.createCategory(name)
+    newCategoryName.value = ''
+    addingCategory.value = false
+  } catch {
+    categoryActionError.value = 'Could not add category. Please try again.'
+  } finally {
+    savingCategory.value = false
+  }
 }
 
 function startEditCategory(cat: Category) {
@@ -383,13 +394,29 @@ function startEditCategory(cat: Category) {
 async function submitEditCategory(cat: Category) {
   const name = editingCategoryName.value.trim()
   if (!name) return
-  await store.editCategory({ ...cat, name })
-  editingCategoryId.value = null
+  savingCategory.value = true
+  categoryActionError.value = ''
+  try {
+    await store.editCategory({ ...cat, name })
+    editingCategoryId.value = null
+  } catch {
+    categoryActionError.value = 'Could not save changes. Please try again.'
+  } finally {
+    savingCategory.value = false
+  }
 }
 
 async function confirmDeleteCategory(id: string) {
-  await store.removeCategory(id)
-  confirmDeleteCategoryId.value = null
+  deletingCategory.value = true
+  categoryActionError.value = ''
+  try {
+    await store.removeCategory(id)
+    confirmDeleteCategoryId.value = null
+  } catch {
+    categoryActionError.value = 'Could not delete category. Please try again.'
+  } finally {
+    deletingCategory.value = false
+  }
 }
 </script>
 
@@ -704,11 +731,14 @@ async function confirmDeleteCategory(id: string) {
               v-model="editingCategoryName"
               class="sheet-input category-row__edit-input"
               type="text"
+              :disabled="savingCategory"
               @keydown.enter="submitEditCategory(cat)"
               @keydown.escape="editingCategoryId = null"
             />
-            <button class="segment-button" type="button" @click="submitEditCategory(cat)">Save</button>
-            <button class="icon-button" type="button" @click="editingCategoryId = null"><X :size="14" /></button>
+            <button class="segment-button" type="button" :disabled="savingCategory" @click="submitEditCategory(cat)">
+              {{ savingCategory ? 'Saving...' : 'Save' }}
+            </button>
+            <button class="icon-button" type="button" :disabled="savingCategory" @click="editingCategoryId = null"><X :size="14" /></button>
           </template>
 
           <template v-else-if="confirmDeleteCategoryId === cat.id">
@@ -716,8 +746,10 @@ async function confirmDeleteCategory(id: string) {
               Delete <strong>{{ cat.name }}</strong>?
               {{ productCountForCategory(cat.id) > 0 ? `${productCountForCategory(cat.id)} products will be reassigned.` : '' }}
             </p>
-            <button class="danger-button" type="button" @click="confirmDeleteCategory(cat.id)">Delete</button>
-            <button class="segment-button" type="button" @click="confirmDeleteCategoryId = null">Cancel</button>
+            <button class="danger-button" type="button" :disabled="deletingCategory" @click="confirmDeleteCategory(cat.id)">
+              {{ deletingCategory ? 'Deleting...' : 'Delete' }}
+            </button>
+            <button class="segment-button" type="button" :disabled="deletingCategory" @click="confirmDeleteCategoryId = null">Cancel</button>
           </template>
 
           <template v-else>
@@ -740,11 +772,14 @@ async function confirmDeleteCategory(id: string) {
             class="sheet-input category-row__edit-input"
             type="text"
             placeholder="Category name"
+            :disabled="savingCategory"
             @keydown.enter="submitNewCategory"
             @keydown.escape="addingCategory = false"
           />
-          <button class="segment-button" type="button" @click="submitNewCategory">Add</button>
-          <button class="icon-button" type="button" @click="addingCategory = false; newCategoryName = ''">
+          <button class="segment-button" type="button" :disabled="savingCategory" @click="submitNewCategory">
+            {{ savingCategory ? 'Saving...' : 'Add' }}
+          </button>
+          <button class="icon-button" type="button" :disabled="savingCategory" @click="addingCategory = false; newCategoryName = ''">
             <Trash2 :size="14" />
           </button>
         </div>
@@ -755,6 +790,8 @@ async function confirmDeleteCategory(id: string) {
             Add category
           </button>
         </div>
+
+        <p v-if="categoryActionError" class="category-row__error">{{ categoryActionError }}</p>
       </div>
     </template>
   </div>

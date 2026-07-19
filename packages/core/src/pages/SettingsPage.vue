@@ -4,13 +4,10 @@ import {
   CircleCheckBig,
   Copy,
   ImagePlus,
-  Palette,
-  RefreshCw,
-  SlidersHorizontal,
   Store,
   Trash2,
 } from '@lucide/vue'
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { businessModeLabel } from '@pos/shared/index'
 import MenuRow from '@pos/core/components/MenuRow.vue'
 import SettingsGroup from '@pos/core/components/SettingsGroup.vue'
@@ -25,69 +22,6 @@ onMounted(() => {
     void store.initialize()
   }
 })
-
-interface SettingsSection {
-  id: string
-  label: string
-  icon: typeof Store
-}
-
-const baseSections: SettingsSection[] = [
-  { id: 'business-profile', label: 'Business Profile', icon: Store },
-  { id: 'online-store', label: 'Online Store', icon: Copy },
-  { id: 'general', label: 'General', icon: SlidersHorizontal },
-  { id: 'data-sync', label: 'Data & Sync', icon: RefreshCw },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
-]
-
-// Only self-serve signups (apps/web/src/onboarding) have a pairing code —
-// single-tenant deployments that never went through that flow leave it blank.
-const navSections = computed<SettingsSection[]>(() =>
-  store.settings.pairingCode ? baseSections : baseSections.filter((section) => section.id !== 'online-store'),
-)
-
-const activeSectionId = ref(baseSections[0].id)
-let sectionObserver: IntersectionObserver | null = null
-
-function observeSections() {
-  sectionObserver?.disconnect()
-  sectionObserver = new IntersectionObserver(
-    (entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting)
-      if (visible.length === 0) {
-        return
-      }
-
-      const topMost = visible.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b))
-      activeSectionId.value = topMost.target.id
-    },
-    { rootMargin: '-15% 0px -70% 0px', threshold: 0 },
-  )
-
-  for (const section of navSections.value) {
-    const el = document.getElementById(section.id)
-    if (el) {
-      sectionObserver.observe(el)
-    }
-  }
-}
-
-onMounted(() => {
-  observeSections()
-})
-
-watch(navSections, () => {
-  observeSections()
-})
-
-onBeforeUnmount(() => {
-  sectionObserver?.disconnect()
-})
-
-function scrollToSection(id: string) {
-  activeSectionId.value = id
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
 
 const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as const).map((mode) => ({
   value: mode,
@@ -212,21 +146,6 @@ function handleBusinessImageChange(event: Event) {
 
 <template>
   <div class="settings-page">
-    <aside class="settings-nav">
-      <p class="settings-nav__title">Settings</p>
-      <button
-        v-for="section in navSections"
-        :key="section.id"
-        class="settings-nav__item"
-        :class="{ 'settings-nav__item--active': activeSectionId === section.id }"
-        type="button"
-        @click="scrollToSection(section.id)"
-      >
-        <component :is="section.icon" :size="16" />
-        <span>{{ section.label }}</span>
-      </button>
-    </aside>
-
     <div class="settings-main">
       <div class="settings-main__header">
         <h1 class="settings-page__title">Settings</h1>

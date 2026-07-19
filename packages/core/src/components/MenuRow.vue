@@ -19,7 +19,9 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
 const triggerEl = ref<HTMLButtonElement | null>(null)
-const popoverStyle = reactive({ top: '0px', left: '0px', width: '0px' })
+const popoverStyle = reactive({ top: '0px', left: '0px', width: '0px', maxHeight: '0px' })
+
+const POPOVER_MARGIN = 8
 
 const currentLabel = computed(
   () => props.options.find((option) => option.value === props.modelValue)?.label ?? props.modelValue,
@@ -34,6 +36,7 @@ function positionPopover() {
   popoverStyle.top = `${rect.bottom + 4}px`
   popoverStyle.left = `${rect.left}px`
   popoverStyle.width = `${rect.width}px`
+  popoverStyle.maxHeight = `${Math.max(window.innerHeight - rect.bottom - 4 - POPOVER_MARGIN, 120)}px`
 }
 
 function toggle() {
