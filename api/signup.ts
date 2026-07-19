@@ -129,7 +129,7 @@ async function signup(body: SignupRequest) {
   })
   await batch.commit()
 
-  return { organizationSlug: orgSlug, storeCode: 'main' }
+  return { organizationSlug: orgSlug, storeCode: 'main', pairingCode }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

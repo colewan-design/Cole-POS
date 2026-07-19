@@ -202,6 +202,10 @@ export interface AppSettings {
   businessMode: BusinessMode
   businessName: string
   businessImageUrl: string
+  // Customer-facing code for the shared storefront app to find this store.
+  // Only populated for self-serve signups (apps/web/src/onboarding) — blank
+  // on single-tenant deployments that never went through that flow.
+  pairingCode: string
   syncMode: 'local-only' | 'online-sync'
   appearance: Appearance
   theme: Theme
@@ -282,6 +286,7 @@ export const defaultSettings: AppSettings = {
   businessMode: 'coffee-shop',
   businessName: '',
   businessImageUrl: '',
+  pairingCode: '',
   syncMode: 'local-only',
   appearance: 'system',
   theme: 'default',

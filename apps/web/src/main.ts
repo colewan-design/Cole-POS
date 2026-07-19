@@ -56,6 +56,7 @@ async function bootstrap() {
       ...defaultSettings,
       businessName: pendingSettings.businessName,
       businessMode: pendingSettings.businessMode,
+      pairingCode: pendingSettings.pairingCode,
       syncMode: 'online-sync',
     })
   }

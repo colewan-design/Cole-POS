@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye, EyeOff } from '@lucide/vue'
+import { Check, Copy, Eye, EyeOff } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import { businessModeLabel, type BusinessMode } from '@pos/shared/index'
@@ -31,6 +31,12 @@ const pairForm = reactive({
 
 const priceLabel = computed(() => `₱${PLAN_PRICE_PESOS.toLocaleString('en-PH')}/month`)
 
+// Set once signup succeeds, holding the UI on a confirmation step (instead of
+// redirecting straight to /app) so the owner actually sees the code their
+// customers will need — it's otherwise never shown anywhere else on first run.
+const createdPairingCode = ref('')
+const codeCopied = ref(false)
+
 function clearError() {
   errorMessage.value = ''
 }
@@ -57,7 +63,12 @@ async function submitSignup() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(signupForm),
     })
-    const body = await response.json().catch(() => ({})) as { organizationSlug?: string; storeCode?: string; error?: string }
+    const body = await response.json().catch(() => ({})) as {
+      organizationSlug?: string
+      storeCode?: string
+      pairingCode?: string
+      error?: string
+    }
     if (!response.ok) {
       errorMessage.value = body.error || 'Unable to create your store.'
       return
@@ -65,14 +76,32 @@ async function submitSignup() {
     if (bindAndEnter(body, 'Unable to create your store.')) {
       // Only on signup — pairing binds to an *existing* store, which already
       // has its own settings that must not be reset.
-      writePendingInitialSettings({ businessName: signupForm.businessName, businessMode: signupForm.businessMode })
-      window.location.href = '/app'
+      writePendingInitialSettings({
+        businessName: signupForm.businessName,
+        businessMode: signupForm.businessMode,
+        pairingCode: body.pairingCode ?? '',
+      })
+      createdPairingCode.value = body.pairingCode ?? ''
     }
   } catch {
     errorMessage.value = 'Something went wrong — check your connection and try again.'
   } finally {
     saving.value = false
   }
+}
+
+async function copyPairingCode() {
+  try {
+    await navigator.clipboard.writeText(createdPairingCode.value)
+    codeCopied.value = true
+    setTimeout(() => { codeCopied.value = false }, 2000)
+  } catch {
+    // Clipboard permission denied — the code is still shown on screen to copy manually.
+  }
+}
+
+function continueToStore() {
+  window.location.href = '/app'
 }
 
 async function submitPairing() {
@@ -109,36 +138,60 @@ async function submitPairing() {
         <strong>ColePOS</strong>
       </div>
 
-      <div class="segmented-control auth-mode-switch" role="group" aria-label="Get started mode">
-        <button
-          class="segment-button"
-          :class="{ active: mode === 'signup' }"
-          type="button"
-          @click="mode = 'signup'; clearError()"
-        >
-          <span>Sign up</span>
-        </button>
-        <button
-          class="segment-button"
-          :class="{ active: mode === 'pair' }"
-          type="button"
-          @click="mode = 'pair'; clearError()"
-        >
-          <span>I already have a store</span>
-        </button>
-      </div>
+      <template v-if="createdPairingCode">
+        <div class="auth-card__hero">
+          <h1 class="auth-card__title">Your store is ready</h1>
+          <p class="auth-card__copy">
+            Share this store code with customers — they enter it in the ColePOS app to find and order from your
+            store. You can find it again anytime in Settings.
+          </p>
+        </div>
 
-      <div v-if="mode === 'signup'" class="auth-card__hero">
-        <h1 class="auth-card__title">Create your store</h1>
-        <p class="auth-card__copy">Set up your business and start selling right away.</p>
-      </div>
-      <div v-else class="auth-card__hero">
-        <h1 class="auth-card__title">Welcome back</h1>
-        <p class="auth-card__copy">Enter your store's code to set up this device.</p>
-      </div>
+        <div class="onboarding-code">
+          <span class="onboarding-code__value">{{ createdPairingCode }}</span>
+          <button class="auth-password-toggle onboarding-code__copy" type="button" @click="copyPairingCode">
+            <Check v-if="codeCopied" :size="16" />
+            <Copy v-else :size="16" />
+            <span>{{ codeCopied ? 'Copied' : 'Copy code' }}</span>
+          </button>
+        </div>
 
-      <Transition name="auth-form-fade" mode="out-in">
-        <form v-if="mode === 'signup'" key="signup" class="auth-form" @submit.prevent="submitSignup">
+        <button class="primary-button auth-submit" type="button" @click="continueToStore">
+          Continue to your store
+        </button>
+      </template>
+
+      <template v-else>
+        <div class="segmented-control auth-mode-switch" role="group" aria-label="Get started mode">
+          <button
+            class="segment-button"
+            :class="{ active: mode === 'signup' }"
+            type="button"
+            @click="mode = 'signup'; clearError()"
+          >
+            <span>Sign up</span>
+          </button>
+          <button
+            class="segment-button"
+            :class="{ active: mode === 'pair' }"
+            type="button"
+            @click="mode = 'pair'; clearError()"
+          >
+            <span>I already have a store</span>
+          </button>
+        </div>
+
+        <div v-if="mode === 'signup'" class="auth-card__hero">
+          <h1 class="auth-card__title">Create your store</h1>
+          <p class="auth-card__copy">Set up your business and start selling right away.</p>
+        </div>
+        <div v-else class="auth-card__hero">
+          <h1 class="auth-card__title">Welcome back</h1>
+          <p class="auth-card__copy">Enter your store's code to set up this device.</p>
+        </div>
+
+        <Transition name="auth-form-fade" mode="out-in">
+          <form v-if="mode === 'signup'" key="signup" class="auth-form" @submit.prevent="submitSignup">
           <label class="settings-field">
             <span class="settings-row__label">Business name</span>
             <input v-model="signupForm.businessName" class="sheet-input" type="text" autocomplete="organization">
@@ -201,9 +254,10 @@ async function submitPairing() {
             {{ saving ? 'Connecting…' : 'Continue' }}
           </button>
         </form>
-      </Transition>
+        </Transition>
 
-      <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+      </template>
     </section>
   </div>
 </template>
@@ -234,5 +288,32 @@ async function submitPairing() {
   margin: 0;
   font: var(--type-caption);
   color: var(--text-secondary);
+}
+
+.onboarding-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--fill);
+}
+
+.onboarding-code__value {
+  font: var(--type-title2);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
+}
+
+.onboarding-code__copy {
+  position: static;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: auto;
+  padding: 0 var(--space-3);
 }
 </style>

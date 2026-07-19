@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {
+  Check,
   CircleCheckBig,
+  Copy,
   ImagePlus,
   Palette,
   RefreshCw,
@@ -32,12 +34,17 @@ interface SettingsSection {
 
 const baseSections: SettingsSection[] = [
   { id: 'business-profile', label: 'Business Profile', icon: Store },
+  { id: 'online-store', label: 'Online Store', icon: Copy },
   { id: 'general', label: 'General', icon: SlidersHorizontal },
   { id: 'data-sync', label: 'Data & Sync', icon: RefreshCw },
   { id: 'appearance', label: 'Appearance', icon: Palette },
 ]
 
-const navSections = computed<SettingsSection[]>(() => baseSections)
+// Only self-serve signups (apps/web/src/onboarding) have a pairing code —
+// single-tenant deployments that never went through that flow leave it blank.
+const navSections = computed<SettingsSection[]>(() =>
+  store.settings.pairingCode ? baseSections : baseSections.filter((section) => section.id !== 'online-store'),
+)
 
 const activeSectionId = ref(baseSections[0].id)
 let sectionObserver: IntersectionObserver | null = null
@@ -113,6 +120,17 @@ const themeOptions = [
 
 const businessNameDraft = ref('')
 const businessImageError = ref('')
+const pairingCodeCopied = ref(false)
+
+async function copyPairingCode() {
+  try {
+    await navigator.clipboard.writeText(store.settings.pairingCode)
+    pairingCodeCopied.value = true
+    setTimeout(() => { pairingCodeCopied.value = false }, 2000)
+  } catch {
+    // Clipboard permission denied — the code is still shown on screen to copy manually.
+  }
+}
 
 const businessNamePlaceholder = computed(() => `${businessModeLabel(store.settings.businessMode)} name`)
 
@@ -282,6 +300,24 @@ function handleBusinessImageChange(event: Event) {
         </SettingsGroup>
 
         <div class="settings-columns__side">
+          <SettingsGroup
+            v-if="store.settings.pairingCode"
+            id="online-store"
+            label="Online Store"
+            description="Customers enter this code in the ColePOS app to find and order from your store."
+          >
+            <div class="settings-row settings-row--stack">
+              <div class="settings-profile__actions">
+                <span class="settings-code-value">{{ store.settings.pairingCode }}</span>
+                <button class="settings-upload-button" type="button" @click="copyPairingCode">
+                  <Check v-if="pairingCodeCopied" :size="16" />
+                  <Copy v-else :size="16" />
+                  <span>{{ pairingCodeCopied ? 'Copied' : 'Copy code' }}</span>
+                </button>
+              </div>
+            </div>
+          </SettingsGroup>
+
           <SettingsGroup id="general" label="General" description="Choose the type of business this register runs.">
             <MenuRow
               label="Business mode"
@@ -349,3 +385,12 @@ function handleBusinessImageChange(event: Event) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.settings-code-value {
+  font: var(--type-title2);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
+}
+</style>

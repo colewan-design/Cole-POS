@@ -41,6 +41,7 @@ const PENDING_INITIAL_SETTINGS_KEY = 'pos_staff_pending_settings'
 export interface PendingInitialSettings {
   businessName: string
   businessMode: BusinessMode
+  pairingCode: string
 }
 
 export function writePendingInitialSettings(settings: PendingInitialSettings) {
@@ -55,7 +56,7 @@ export function consumePendingInitialSettings(): PendingInitialSettings | null {
     window.localStorage.removeItem(PENDING_INITIAL_SETTINGS_KEY)
     const parsed = JSON.parse(raw) as Partial<PendingInitialSettings>
     return parsed.businessName && parsed.businessMode
-      ? { businessName: parsed.businessName, businessMode: parsed.businessMode }
+      ? { businessName: parsed.businessName, businessMode: parsed.businessMode, pairingCode: parsed.pairingCode ?? '' }
       : null
   } catch {
     return null
