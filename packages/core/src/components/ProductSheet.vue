@@ -86,8 +86,12 @@ const isValid = computed(
   () =>
     form.name.trim().length > 0 &&
     form.categoryId.length > 0 &&
-    form.priceText.trim().length > 0 &&
-    !isNaN(parseFloat(form.priceText)) &&
+    // v-model on <input type="number"> auto-casts to a JS number once the
+    // value parses (Vue's built-in behavior, independent of any .number
+    // modifier) — so priceText can be a number at runtime despite its string
+    // initial value. String(...) here handles both.
+    String(form.priceText).trim().length > 0 &&
+    !isNaN(parseFloat(String(form.priceText))) &&
     form.businessModes.length > 0,
 )
 
